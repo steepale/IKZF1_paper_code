@@ -4,7 +4,7 @@ DNA was extracted from a blood sample of one line 6x7-F1 bird. All biological ma
 
 ## Supporting Annotation
 
-Supporting annotation of birds, tumors, samples, and extracted DNA found in `supporting_documentation`
+Supporting annotation found in `supporting_documentation`
 
 Summary of Submitted Samples to the MSU RTSF Genomics Core
 

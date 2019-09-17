@@ -15,7 +15,7 @@ Statistical modeling revealed the most important variable to predict true varian
 -General report of assay from Genomics Core  
 `supporting_documentation/20181128_SeqProduction_Cheng.xlsx`
 
--Supporting Email upon delivery
+-Supporting Email upon delivery  
 `supporting_documentation/Email_Carr_MiSeq_20181128_Amplicon_PE250.pdf`
 
 -Genomics Core submission form  
@@ -30,7 +30,7 @@ Statistical modeling revealed the most important variable to predict true varian
 -Amplicons and primers  
 `supporting_documentation/amplicons_and_primers.xlsx`  
 
--Amplicon sequencing notes
+-Amplicon sequencing notes  
 `supporting_documentation/Amplicon_Sequencing_Notes.pdf`  
 
 ## Sequencing Files

@@ -1,4 +1,4 @@
-# Custom Alteration of NCBI **Gallus gallus** 5.0 Reference Genome
+# Custom Alteration of NCBI *Gallus gallus* 5.0 Reference Genome
 
 The Galgal5 reference genome contains a large number of micro-chromosomes and unresolved contigs. Early in our experiment, we chose to focus on only the major chromosomes; therefore, all genomic analyses rely on mapping to an altered version of the NCBI Glagal5 genome. Specifically, we reduced the Galgal5 reference to major contigs (1-28,30-33,W,Z,LGE64, & MT).  
 

@@ -1,6 +1,6 @@
-# Custom Affymetrix SNP Chips (~9K) in *Gallus gallus* and Marek's Disease (MD) Lymphomas 
+# Custom Affymetrix SNP Chips (~15K) in *Gallus gallus* and Marek's Disease (MD) Lymphomas 
 
-Approximately 9,000 SNP loci were measured in 72 Marek's disease tumors, line 6 DNA, line 7 DNA, and F1 6x7 DNA via custom Affymetrix SNP chips. SNP arrays were processed and analyzed by DNA LandMarks (Saint-Jean-sur-Richelieu, Quebec, Canada). DNA was prepared at the Avian Disease and Oncology Lab and provided as a 96 well plate.
+Approximately 13,665 SNP loci were measured in 72 Marek's disease tumors, line 6 DNA, line 7 DNA, and F1 6x7 DNA via custom Affymetrix SNP chips. DNA was prepared at the Avian Disease and Oncology Lab and provided as a 96 well plate. SNP arrays were processed and genotyped by DNA LandMarks (Saint-Jean-sur-Richelieu, Quebec, Canada).
 
 
 ## Supporting Documentation
@@ -15,7 +15,7 @@ Approximately 9,000 SNP loci were measured in 72 Marek's disease tumors, line 6 
 *Note: Notice "Adjusted Layout after loading mistake" (second layout) for the final layout  
 `supporting_docs/Microarray_Plate_Organization_08_07_15.xlsx`
 
--List of SNPs used for microarray analysis  
+-Partial list of SNPs used for microarray analysis  
 `supporting_docs/9K_Fully_Informative_SNPs_for15AffyMicroArray_2015_10_30.xlsx`  
 
 -Communication between DNA Landmarks and Avian Disease and Oncology Lab  

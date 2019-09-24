@@ -1,0 +1,1701 @@
+#===============================================================================
+#
+#         FILE: /Users/Alec/Documents/Bioinformatics/MDV_Project/rna_gene_expression_analysis/rna_gene_expression_analysis_main_documentation.txt
+#
+#        USAGE: Development script. Directions and explanations inside.
+#
+#  DESCRIPTION:  This script serves as a step by step documentation script and development script for differential gene expression
+#                analysis from whole transcriptome analysis of tumor samples and matched germline samples
+# REQUIREMENTS:  ---
+#        NOTES:  ---
+#       AUTHOR:  Alec Steep, steepale@msu.edu
+#  AFFILIATION:  Michigan State University (MSU), East Lansing, MI, United States
+#				         USDA ARS Avian Disease and Oncology Lab (ADOL), East Lansing, MI, United States
+#				         Technical University of Munich (TUM), Weihenstephan, Germany
+#      VERSION:  1.0
+#      CREATED:  2016.05.18
+#     REVISION:  
+#===============================================================================
+
+# Permanent PROJECT DIRECTORY (MSU Cluster)
+# /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE
+proj_dir="/mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE"
+export MDV_DIR="/mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang" # Placed in ~/.bashrc file
+cd $proj_dir
+
+# Objective of analysis:
+# Determine differentially mutated genes
+# Determine which samples cluster together with multi-dimentional analysis from differential gene expression
+# Determine kegg and GO pathways with most differentially expressed genes
+# Visualize pathways with differential gene expression and DNA-variants
+
+# Make appropriate directories
+mkdir ./data
+mkdir ./data/ref
+mkdir ./data/alignments
+mkdir ./analysis
+mkdir ./analysis/fastqc
+mkdir ./data/ref/KT445934.2
+mkdir ./data/gene_counts
+mkdir ./data/gene_counts_mdv
+mkdir ./scripts
+mkdir ./scripts/R
+mkdir ./data/ref/ensembl
+
+# Install dependencies
+# The HPCC tophat module errored out so I will have to download the most recent release and configure
+# Tophat is not Python 3 clean, so must load Python 2.7
+cd ${HOME}/Apps/
+wget https://ccb.jhu.edu/software/tophat/downloads/tophat-2.1.1.Linux_x86_64.tar.gz
+tar xvfz tophat-2.1.1.Linux_x86_64.tar.gz
+rm tophat-2.1.1.Linux_x86_64.tar.gz
+cd ${HOME}/bin
+ln -s ${HOME}/Apps/tophat-2.1.1.Linux_x86_64/tophat2
+cd ${proj_dir}
+
+# Install RSeQC to determine the strandedness of RANSeq data
+cd ${HOME}/Apps/
+wget https://downloads.sourceforge.net/project/rseqc/RSeQC-2.6.4.tar.gz?r=http%3A%2F%2Frseqc.sourceforge.net%2F&ts=1500565955&use_mirror=cytranet
+mv RSeQC-2.6.4.tar.gz?r=http:%2F%2Frseqc.sourceforge.net%2F RSeQC-2.6.4.tar.gz
+tar xvfz RSeQC-2.6.4.tar.gz
+rm RSeQC-2.6.4.tar.gz
+export PATH="/mnt/home/steepale/Apps/RSeQC-2.6.4/scripts:${PATH}"
+cd ${proj_dir}
+
+# Copy Relevant reference data
+# cp -av /mnt/home/steepale/RNA_Seq/RNA_dif_express2/data/ref/ ./data/
+
+# Transfer the appropriate files from research directory to home directory
+
+# Make recipient directories
+find /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_seq/data/reads/ -name '*_*_L00*_R*_001.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_[A-Z]*_L00[1-8]_R[1-2]_001.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "mkdir ./data/{}"
+
+# Transfer the files into their respective recipient directories
+find /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_seq/data/reads/ -name '*_*_L00*_R*_001.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_[A-Z]*_L00[1-8]_R[1-2]_001.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "cp -v /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_seq/data/reads/{}_[A-Z]*_L00[1-8]_R[1-2]_001.fastq.gz ./data/{}/"
+
+# Rename files appropriately
+# For an unknown reason, we need to run this program four times in a row (maximum of 4 data files in each folder)
+find `pwd` -name '*_*_L00*_R*_001.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_[A-Z]*_L00[1-8]_R[1-2]_001.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "python ./scripts/rename_rna_samples.py ./data/{}/{}_[A-Z]*_L00[1-8]_R[1-2]_001.fastq.gz"
+
+find `pwd` -name '*_*_L00*_R*_001.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_[A-Z]*_L00[1-8]_R[1-2]_001.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "python ./scripts/rename_rna_samples.py ./data/{}/{}_[A-Z]*_L00[1-8]_R[1-2]_001.fastq.gz"
+
+find `pwd` -name '*_*_L00*_R*_001.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_[A-Z]*_L00[1-8]_R[1-2]_001.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "python ./scripts/rename_rna_samples.py ./data/{}/{}_[A-Z]*_L00[1-8]_R[1-2]_001.fastq.gz"
+
+find `pwd` -name '*_*_L00*_R*_001.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_[A-Z]*_L00[1-8]_R[1-2]_001.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "python ./scripts/rename_rna_samples.py ./data/{}/{}_[A-Z]*_L00[1-8]_R[1-2]_001.fastq.gz"
+
+# Combine the reads by direction across lanes for each sample
+#for bird in "017901-2_2"
+#do
+#echo ${bird}
+#cat ${bird}_L001_R1_paired_norRNA.fastq.gz \
+#${bird}_L002_R1_paired_norRNA.fastq.gz > \
+#${bird}_R1_paired_norRNA.fastq.gz
+#cat ${bird}_L001_R2_paired_norRNA.fastq.gz \
+#${bird}_L002_R2_paired_norRNA.fastq.gz > \
+#${bird}_R2_paired_norRNA.fastq.gz
+#done
+
+# ./scripts/rename_rna_samples.py
+######################################
+import sys
+import re
+import os
+
+infile = sys.argv[1]
+
+filename_path = str(infile)
+pathparts = filename_path.split('/')
+path = pathparts[0] + '/' + pathparts[1] + '/' + pathparts[2] + '/' 
+filename = filename_path.split('/')[3]
+nameparts = filename.split('_')
+if nameparts[1] == "1" or nameparts[1] == "2":
+	sampleID = nameparts[0] + '_' + nameparts[1]
+	barcode = nameparts[2]
+	lane = nameparts[3]
+	readnum = nameparts[4]
+	filetype = nameparts[5].split('.')[1] + '.' + nameparts[5].split('.')[2]
+else:
+	sampleID = nameparts[0]
+	barcode = nameparts[1]
+	lane = nameparts[2]
+	readnum = nameparts[3]
+	filetype = nameparts[4].split('.')[1] + '.' + nameparts[4].split('.')[2]
+newname = sampleID + '_' + lane + '_' + readnum + '.' + filetype
+newname_path = path + newname
+os.rename(filename_path, newname_path)
+########################################
+
+# Reformat the genes.gtf file to coordinate with htseq
+# grep 'gene_id' ./data/ref/genes.gtf > ./data/ref/genes_int.gtf
+
+# python ./scripts/reformat_gtf.py \
+# ./data/ref/genes_int.gtf \
+# ./data/ref/genes_htseq_format.gtf
+
+# ./scripts/reformat_gtf.py
+######################################
+# import sys
+
+# infile=sys.argv[1]
+
+# outfile=open(sys.argv[2], 'w')
+
+
+# for line in open(infile):
+# 	col = line.split('\t')
+# 	transcript_id = col[8].split(';')[0]
+# 	gene_id = col[8].split(';')[2].replace('gene_name', 'gene_id')
+# 	outfile.write(col[0] + '\t' + col[1] + '\t' + col[2] + '\t' + col[3] + '\t' + col[4] + '\t' + col[5] + '\t' + col[6] + '\t' + col[7] + '\t' + transcript_id + '; ' + gene_id + '\n')
+# print('Finished')
+########################################
+
+# Build the bowtie index from the Galgal5 reference genome
+module load bowtie2/2.2.6
+# Galgal5 reference genome
+bowtie2-build \
+./data/ref/galgal5.fa \
+./data/ref/galgal5
+
+# MDV Reference Genome
+# https://www-ncbi-nlm-nih-gov.proxy1.cl.msu.edu/nuccore/NC_002229.3
+
+# Build bowtie index on MDV genome
+bowtie2-build \
+./data/ref/gallid_herpesvirus_2_genomic.fa \
+./data/ref/gallid_herpesvirus_2_genomic
+
+# Download the MD genome and transcriptome from ensembl
+# Downloaded on May 10th 2018
+cd ./data/ref/ensembl/
+
+# Genome
+wget -r -np -nH ftp://ftp.ensembl.org/pub/release-92/fasta/gallus_gallus/dna/* .
+# Transcriptome
+wget -r -np -nH ftp://ftp.ensembl.org/pub/release-92/fasta/gallus_gallus/cdna/* . 
+# Gtf files
+wget -r -np -nH ftp://ftp.ensembl.org/pub/release-92/gtf/gallus_gallus/* .
+# GFF3 files
+wget -r -np -nH ftp://ftp.ensembl.org/pub/release-92/gff3/gallus_gallus/* .
+
+# unzip the main reference genome
+gunzip ./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel.fa.gz
+# Unzip the transcriptome
+gunzip ./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/cdna/Gallus_gallus.Gallus_gallus-5.0.cdna.all.fa.gz
+# Unzip the gtf file
+gunzip ./data/ref/ensembl/pub/release-92/gtf/gallus_gallus/Gallus_gallus.Gallus_gallus-5.0.92.gtf.gz
+
+# Build the bowtie index from the Galgal5 reference genome (30 min)
+module load bowtie2/2.2.6
+# Galgal5 reference genome
+bowtie2-build \
+./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel.fa \
+./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel
+
+# Create the transcriptome index once so tophat doesn't need to do it over and over again (takes 5 minutes)
+# Load modules
+module load Python/2.7.2
+module load TopHat/2.1.0
+module load bowtie2/2.2.6
+
+tophat2 \
+--num-threads 1 \
+--GTF ./data/ref/ensembl/pub/release-92/gtf/gallus_gallus/Gallus_gallus.Gallus_gallus-5.0.92.gtf \
+--transcriptome-index ./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/cdna/Gallus_gallus.Gallus_gallus-5.0.cdna.all \
+./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel
+
+# Useful info: http://blog.nextgenetics.net/?e=27
+## Convert the gff3 file to a gtf file
+module load cufflinks/2.2.1
+## Convert the gff3 file to a gtf file
+gffread \
+./data/ref/gallid_herpesvirus_2_genomic.gff3 \
+-T \
+-o ./data/ref/gallid_herpesvirus_2_genomic.gtf
+
+#### If running for first time
+# Preprocess, map, and count all the reads mapped to each gene (chicken genome)
+find `pwd` -name '*_L00[1-8]_R[1-2].fastq.gz' |\
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2].fastq.gz//' | \
+sort | uniq | \
+xargs -i echo 'qsub ./scripts/preprocess_map_count.sh -v Var='{} |sh
+
+#### If running for second time (MAKE NOTE: THIS WILL TAKE 1 TB of disk space if all jobs run at once bcaz of temp folders)
+find `pwd` -name '*_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz' |\
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz//' | \
+sort | uniq | grep "017756-3" |\
+xargs -i echo 'qsub ./scripts/map_after_process_n1000.sh -v Var='{} |sh
+
+# ./scripts/map_after_process.sh
+##################################
+#!/bin/bash -login
+#PBS -l nodes=1:ppn=4,walltime=01:00:00:00,mem=8gb
+#PBS -j oe
+
+# working directory:
+cd /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE
+
+# Map the reads to a reference genome
+module load Python/2.7.2
+module load TopHat/2.1.0
+module load bowtie2/2.2.6
+
+# Need to map by certain paired lanes (1&2, 3&4, 5&6, 7) based on how samples were organized during sequencing run
+#1&2
+find ./data/${Var}/ -name '*_L00[1-2]_R[1-2]_paired_norRNA.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "tophat -p 4 --transcriptome-index=./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/cdna/Gallus_gallus.Gallus_gallus-5.0.cdna.all -o ./data/${Var} ./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel ./data/${Var}/{}_L001_R1_paired_norRNA.fastq.gz,./data/${Var}/{}_L002_R1_paired_norRNA.fastq.gz ./data/${Var}/{}_L001_R2_paired_norRNA.fastq.gz,./data/${Var}/{}_L002_R2_paired_norRNA.fastq.gz"
+#3&4
+find ./data/${Var}/ -name '*_L00[3-4]_R[1-2]_paired_norRNA.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "tophat -p 4 --transcriptome-index=./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/cdna/Gallus_gallus.Gallus_gallus-5.0.cdna.all -o ./data/${Var} ./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel ./data/${Var}/{}_L003_R1_paired_norRNA.fastq.gz,./data/${Var}/{}_L004_R1_paired_norRNA.fastq.gz ./data/${Var}/{}_L003_R2_paired_norRNA.fastq.gz,./data/${Var}/{}_L004_R2_paired_norRNA.fastq.gz"
+#5&6
+find ./data/${Var}/ -name '*_L00[5-6]_R[1-2]_paired_norRNA.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "tophat -p 1 --transcriptome-index=./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/cdna/Gallus_gallus.Gallus_gallus-5.0.cdna.all -o ./data/${Var} ./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel ./data/${Var}/{}_L005_R1_paired_norRNA.fastq.gz,./data/${Var}/{}_L006_R1_paired_norRNA.fastq.gz ./data/${Var}/${Var}_L005_R2_paired_norRNA.fastq.gz,./data/${Var}/${Var}_L006_R2_paired_norRNA.fastq.gz"
+#7
+find ./data/${Var}/ -name '*_L007_R[1-2]_paired_norRNA.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "tophat -p 4 --transcriptome-index=./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/cdna/Gallus_gallus.Gallus_gallus-5.0.cdna.all -o ./data/${Var} ./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel ./data/${Var}/{}_L007_R1_paired_norRNA.fastq.gz ./data/${Var}/{}_L007_R2_paired_norRNA.fastq.gz"
+
+# Remove redundent files
+#rm ./data/${Var}/accepted_hits.bam
+#rm -r ./data/${Var}/tmp
+
+qstat -f ${PBS_JOBID}
+#################################
+
+# ./scripts/map_after_process_n1000.sh
+##################################
+#!/bin/bash -login
+#PBS -l nodes=1:ppn=4,walltime=00:01:00:00,mem=8gb
+#PBS -j oe
+
+# working directory:
+cd /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE
+
+# Map the reads to a reference genome
+module load Python/2.7.2
+module load TopHat/2.1.0
+module load bowtie2/2.2.6
+
+# Need to map by certain paired lanes (1&2, 3&4, 5&6, 7) based on how samples were organized during sequencing run
+#1&2
+find ./data/${Var}/ -name '*_L00[1-2]_R[1-2]_paired_norRNA_n1000.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA_n1000.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "tophat -p 4 --transcriptome-index=./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/cdna/Gallus_gallus.Gallus_gallus-5.0.cdna.all -o ./data/${Var} ./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel ./data/${Var}/{}_L001_R1_paired_norRNA_n1000.fastq.gz,./data/${Var}/{}_L002_R1_paired_norRNA_n1000.fastq.gz ./data/${Var}/{}_L001_R2_paired_norRNA_n1000.fastq.gz,./data/${Var}/{}_L002_R2_paired_norRNA_n1000.fastq.gz"
+#3&4
+find ./data/${Var}/ -name '*_L00[3-4]_R[1-2]_paired_norRNA_n1000.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA_n1000.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "tophat -p 4 --transcriptome-index=./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/cdna/Gallus_gallus.Gallus_gallus-5.0.cdna.all -o ./data/${Var} ./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel ./data/${Var}/{}_L003_R1_paired_norRNA_n1000.fastq.gz,./data/${Var}/{}_L004_R1_paired_norRNA_n1000.fastq.gz ./data/${Var}/{}_L003_R2_paired_norRNA_n1000.fastq.gz,./data/${Var}/{}_L004_R2_paired_norRNA_n1000.fastq.gz"
+#5&6
+find ./data/${Var}/ -name '*_L00[5-6]_R[1-2]_paired_norRNA_n1000.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA_n1000.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "tophat -p 1 --transcriptome-index=./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/cdna/Gallus_gallus.Gallus_gallus-5.0.cdna.all -o ./data/${Var} ./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel ./data/${Var}/{}_L005_R1_paired_norRNA_n1000.fastq.gz,./data/${Var}/{}_L006_R1_paired_norRNA_n1000.fastq.gz ./data/${Var}/${Var}_L005_R2_paired_norRNA_n1000.fastq.gz,./data/${Var}/${Var}_L006_R2_paired_norRNA_n1000.fastq.gz"
+#7
+find ./data/${Var}/ -name '*_L007_R[1-2]_paired_norRNA_n1000.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA_n1000.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "tophat -p 4 --transcriptome-index=./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/cdna/Gallus_gallus.Gallus_gallus-5.0.cdna.all -o ./data/${Var} ./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel ./data/${Var}/{}_L007_R1_paired_norRNA_n1000.fastq.gz ./data/${Var}/{}_L007_R2_paired_norRNA_n1000.fastq.gz"
+
+# Sort the BAMs with Samtools
+find ./data/${Var}/ -name '*_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "samtools sort -n ./data/${Var}/accepted_hits.bam ./data/${Var}/{}_paired_norRNA_sorted"
+
+# Remove the tophat output bam file
+rm ./data/${Var}/accepted_hits.bam
+#rm ./data/${Var}/unmapped.bam
+# These temp directories take up a lot of space too
+rm -r ./data/${Var}/tmp
+
+# Count the mapped RNA read coverage on respective genes
+module load PySAM/0.6
+module load HTSeq/0.6.1
+
+find ./data/${Var}/ -name '*_paired_norRNA_sorted.bam' | \
+xargs -i basename {} | \
+sed 's/_paired_norRNA_sorted.bam//' | \
+sort | uniq | \
+xargs -i sh -c "htseq-count --format=bam --stranded=no --order=name ./data/${Var}/{}_paired_norRNA_sorted.bam ./data/ref/ensemble/Gallus_gallus.Gallus_gallus-5.0.86.gtf > ./data/gene_counts/{}_ensembl_gene_counts.txt"
+
+qstat -f ${PBS_JOBID}
+#################################
+
+
+
+
+# ./scripts/preprocess_map_count.sh
+########################################
+#!/bin/bash -login
+#PBS -l nodes=1:ppn=10,walltime=01:00:00:00,mem=20gb
+#PBS -j oe
+set -e
+set -u
+set -o pipefail
+
+# working directory:
+cd /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE
+
+# Look at your data in FastQC and generate a report
+module load FastQC/0.11.3
+
+find ./data/${Var}/ -name '*_L00*_R*.fastq.gz' | \
+xargs -i sh -c "fastqc {} -o ./analysis/fastqc/"
+
+# Trim the data with trimmomatic
+module load Trimmomatic/0.33
+
+find ./data/${Var}/ -name '*_L00*_R*.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_R[1-2].fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "java -jar -Xmx20g $TRIM/trimmomatic PE -threads 8 ./data/${Var}/{}_R1.fastq.gz ./data/${Var}/{}_R2.fastq.gz ./data/${Var}/{}_R1_paired.fastq.gz ./data/${Var}/{}_R1_unpaired.fastq.gz ./data/${Var}/{}_R2_paired.fastq.gz ./data/${Var}/{}_R2_unpaired.fastq.gz ILLUMINACLIP:$TRIM/adapters/TruSeq3-PE.fa:2:30:10 LEADING:2 TRAILING:2 SLIDINGWINDOW:4:2 MINLEN:25"
+
+# This is equivalent to:
+
+#java -jar $TRIM/trimmomatic \
+#PE \
+#./data/File1_L001_R1.fastq.gz \
+#./data/File1_L001_R2.fastq.gz \
+#./data/File1_L001_R1_paired.fastq.gz \
+#./data/File1_L001_R1_unpaired.fastq.gz \
+#./data/File1_L001_R2_paired.fastq.gz \
+#./data/File1_L001_R2_unpaired.fastq.gz \
+#ILLUMINACLIP:$TRIM/adapters/TruSeq3-PE.fa:2:30:10 \
+#LEADING:2 \
+#TRAILING:2 \
+#SLIDINGWINDOW:4:2 \
+#MINLEN:25
+
+# Remove adapters (ILLUMINACLIP:TruSeq3-PE.fa:2:30:10)
+# ILLUMINACLIP:<fastaWithAdaptersEtc>:<seed mismatches>:<palindrome clip threshold>:<simple clip threshold>
+# Remove Illumina adapters provided in the TruSeq3-PE.fa file (provided). Initially Trimmomatic will look for seed matches (16 bases) allowing maximally 2 mismatches. 
+# These seeds will be extended and clipped if in the case of paired end reads a score of 30 is reached (about 50 bases), 
+# or in the case of single ended reads a score of 10, (about 17 bases).
+# Remove leading low quality or N bases (below quality 2) (LEADING:2)
+# Remove trailing low quality or N bases (below quality 2) (TRAILING:2)
+# Scan the read with a 4-base wide sliding window, cutting when the average quality per base drops below 2 (SLIDINGWINDOW:4:2)
+# Choose a phed cutoff of two based on MacManes, 2014.
+# Drop reads below the 25 bases long (MINLEN:25)
+
+# Remove the trimmed unpaired reads
+find ./data/${Var}/ -name '*_L00[1-8]_R[1-2]_unpaired.fastq.gz' | \
+xargs -i sh -c "rm {}"
+
+# Remove the original raw data files that were previously copied
+find ./data/${Var}/ -name '*_L00*_R[1-2].fastq.gz' | \
+xargs -i sh -c "rm {}"
+
+# Look at paired trimmed reads in FastQC
+find ./data/${Var}/ -name '*_L00[1-8]_R[1-2]_paired.fastq.gz' | \
+xargs -i sh -c "fastqc {} -o ./analysis/fastqc/"
+
+# Obtained chicken specific rRNA from GenBank accession number KT445934
+# file: /mnt/scratch/steepale/birdman/MDV_project/RNA_dif_express/data/ref/KT445934.2/KT445934.2_Gallus_rRNA_gg4.fasta
+
+# Examine the rRNA data to make sure it is in proper format for bbmap
+/mnt/home/steepale/Apps/bbmap/testformat.sh \
+./data/ref/KT445934.2/KT445934.2_Gallus_rRNA_gg4.fasta
+#sanger	fasta	raw	single-ended
+
+# Remove the rRNA sequences specific to chicken
+find ./data/${Var}/ -name '*_L00[1-8]_R[1-2]_paired.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_R[1-2]_paired.fastq.gz//' | \
+sort | uniq | 
+xargs -i sh -c "/mnt/home/steepale/Apps/bbmap/bbduk.sh -Xmx18g in1=./data/${Var}/{}_R1_paired.fastq.gz in2=./data/${Var}/{}_R2_paired.fastq.gz out1=./data/${Var}/{}_R1_paired_norRNA.fastq.gz out2=./data/${Var}/{}_R2_paired_norRNA.fastq.gz ref=./data/ref/KT445934.2/KT445934.2_Gallus_rRNA_gg4.fasta"
+
+# This is equivalent to:
+#/mnt/home/steepale/Apps/bbmap/bbduk.sh \
+#in1=./data/Sample_lane_R1_paired.fastq \
+#in2=./data/Sample_lane_R2_paired.fastq \
+#out1=./data/Sample_lane_R1_paired_norRNA.fastq \
+#out2=./data/Sample_lane_R2_paired_norRNA.fastq \
+#ref=./data/ref/KT445934.2/KT445934.2_Gallus_rRNA_gg4.fasta
+
+# Remove the redundent paired trimmed reads that were output from Trimmomatic
+find ./data/${Var}/ -name '*_L00[1-8]_R[1-2]_paired.fastq.gz' | \
+xargs -i sh -c "rm {}"
+
+# Look at paired trimmed reads minus rRNA in FastQC
+find ./data/${Var}/ -name '*_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz' | \
+xargs -i sh -c "fastqc {} -o ./analysis/fastqc/"
+
+# Map the reads to a reference genome
+module load Python/2.7.2
+module load TopHat/2.1.0
+module load bowtie2/2.2.6
+
+# Need to map by certain paired lanes (1&2, 3&4, 5&6, 7) based on how samples were organized during sequencing run
+#1&2
+find ./data/${Var}/ -name '*_L00[1-2]_R[1-2]_paired_norRNA.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "tophat -p 10 --transcriptome-index=./data/ref/GCF_000002315.4_Gallus_gallus-5.0_genomic -o ./data/${Var} ./data/ref/galgal5 ./data/${Var}/{}_L001_R1_paired_norRNA.fastq.gz,./data/${Var}/{}_L002_R1_paired_norRNA.fastq.gz ./data/${Var}/{}_L001_R2_paired_norRNA.fastq.gz,./data/${Var}/{}_L002_R2_paired_norRNA.fastq.gz"
+#3&4
+find ./data/${Var}/ -name '*_L00[3-4]_R[1-2]_paired_norRNA.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "tophat -p 10 --transcriptome-index=./data/ref/GCF_000002315.4_Gallus_gallus-5.0_genomic -o ./data/${Var} ./data/ref/galgal5 ./data/${Var}/{}_L003_R1_paired_norRNA.fastq.gz,./data/${Var}/{}_L004_R1_paired_norRNA.fastq.gz ./data/${Var}/{}_L003_R2_paired_norRNA.fastq.gz,./data/${Var}/{}_L004_R2_paired_norRNA.fastq.gz"
+#5&6
+find ./data/${Var}/ -name '*_L00[5-6]_R[1-2]_paired_norRNA.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "tophat -p 10 --transcriptome-index=./data/ref/GCF_000002315.4_Gallus_gallus-5.0_genomic -o ./data/${Var} ./data/ref/galgal5 ./data/${Var}/{}_L005_R1_paired_norRNA.fastq.gz,./data/${Var}/{}_L006_R1_paired_norRNA.fastq.gz ./data/${Var}/{}_L005_R2_paired_norRNA.fastq.gz,./data/${Var}/{}_L006_R2_paired_norRNA.fastq.gz"
+#7
+find ./data/${Var}/ -name '*_L007_R[1-2]_paired_norRNA.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "tophat -p 10 --transcriptome-index=./data/ref/GCF_000002315.4_Gallus_gallus-5.0_genomic -o ./data/${Var} ./data/ref/galgal5 ./data/${Var}/{}_L007_R1_paired_norRNA.fastq.gz ./data/${Var}/{}_L007_R2_paired_norRNA.fastq.gz"
+
+# This is equivalent to:
+#tophat \
+#-p 4 \
+#--transcriptome-index=./data/ref/GCF_000002315.4_Gallus_gallus-5.0_genomic \
+#-o ./data/sample_barcode \
+#./data/ref/galgal5 \
+#./data/sample_barcode_firstlane_R1_paired_norRNA.fastq.gz,./data/sample_barcode_secondlane_R1_paired_norRNA.fastq.gz \
+#./data/sample_barcode_firstlane_R2_paired_norRNA.fastq.gz,./data/sample_barcode_secondlane_R2_paired_norRNA.fastq.gz
+
+# Count the number of mapped reads with samtools
+module load SAMTools/1.2
+
+find ./data/${Var}/ -name '*_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "echo {}; samtools view -c -F 4 ./data/${Var}/accepted_hits.bam"
+
+# Look at the mapping summary files
+find ./data/${Var}/ -name '*_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "echo {}; cat ./data/${Var}/align_summary.txt"
+
+# 60% of reads mapped when all said and done... 60% of 50,000,000 is 30,000,000... literally just enough
+
+# Sort the BAMs with Samtools
+find ./data/${Var}/ -name '*_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz' | \
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz//' | \
+sort | uniq | \
+xargs -i sh -c "samtools sort -n ./data/${Var}/accepted_hits.bam ./data/${Var}/{}_paired_norRNA_sorted"
+
+# Remove the tophat output bam file
+rm ./data/${Var}/accepted_hits.bam
+#rm ./data/${Var}/unmapped.bam
+# These temp directories take up a lot of space too
+rm -r ./data/${Var}/tmp
+
+# Count the mapped RNA read coverage on respective genes
+module load PySAM/0.6
+module load HTSeq/0.6.1
+
+find ./data/${Var}/ -name '*_paired_norRNA_sorted.bam' | \
+xargs -i basename {} | \
+sed 's/_paired_norRNA_sorted.bam//' | \
+sort | uniq | \
+xargs -i sh -c "htseq-count --format=bam --stranded=yes --order=name ./data/${Var}/{}_paired_norRNA_sorted.bam ./data/ref/ensemble/Gallus_gallus.Gallus_gallus-5.0.86.gtf > ./data/gene_counts/{}_ensembl_gene_counts.txt"
+
+# Remove the paired trimmed reads minus rRNA
+### NOTE: Don't do this step
+#find ./data/${Var}/ -name '*_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz' | \
+#xargs -i sh -c "rm {}"
+
+qstat -f ${PBS_JOBID}
+########################################
+
+### Map and count genes for MDV genome
+# Note: Given that MDV is a viral genome and there is no known annotated transcriptome, we
+# will use the viral genome as the transcriptome as well
+
+# Copy the gff3 file as if gff file
+#cp ./data/ref/gallid_herpesvirus_2_genomic.gff3 \
+#./data/ref/gallid_herpesvirus_2_genomic.gff
+
+# Edit the MDV gtf file to correspond to gene counts, can perfect later if biologically interesting
+sed 's/CDS/exon/g' ./data/ref/gallid_herpesvirus_2_genomic.gtf > ./data/ref/gallid_herpesvirus_2_genomic_htseq_format.gtf
+
+# Index the MDV genome fasta file
+bwa index ./data/ref/gallid_herpesvirus_2_genomic.fa
+
+module load Python/2.7.2
+module load PySAM/0.6
+module load HTSeq/0.6.1
+
+for sample in `cat ${HOME}/databases/samples/tumor_samples_rnaseq_2014_017NNN-N_redunant_1s.txt
+do
+qsub ./scripts/map_count_MDV_ref.sh -v Var=${sample}
+done
+
+# ./scripts/map_count_MDV_ref.sh
+########################################
+#!/bin/bash -login
+### Job name
+### Resources
+#PBS -l nodes=1:ppn=1,walltime=00:03:59:00,mem=4gb
+### Send email if the job encounters an error
+#PBS –m a
+# Change to working directory
+cd ${PBS_O_WORKDIR}
+### Output files to where you submitted your batch file
+#PBS -e ./jobs/${PBS_JOBNAME}_${Var}_${PBS_JOBID}.err
+#PBS -o ./jobs/${PBS_JOBNAME}_${Var}_${PBS_JOBID}.log
+#PBS -j oe
+
+Var="017834-2"
+
+# Map the reads to a reference genome
+module load Python/2.7.2
+
+# Stategy for script taken from: http://www.cureffi.org/2013/01/25/aligning-unmapped-reads-to-viral-genomes/
+# Sort and index the unmapped reads bam file
+samtools sort ./data/${Var}/unmapped.bam > ./data/${Var}/unmapped_sorted.bam
+samtools index ./data/${Var}/unmapped_sorted.bam
+
+# Index the MDV genome fasta file
+#bwa index ./data/ref/gallid_herpesvirus_2_genomic.fa
+
+# Single
+bwa aln -b ./data/ref/gallid_herpesvirus_2_genomic.fa ./data/${Var}/unmapped_sorted.bam > ./data/${Var}/${Var}_unmapped_mdv.sai
+
+# Single
+bwa samse ./data/ref/gallid_herpesvirus_2_genomic.fa \
+./data/${Var}/${Var}_unmapped_mdv.sai \
+./data/${Var}/unmapped_sorted.bam > ./data/${Var}/${Var}_mdv.sam
+
+#samtools view ./data/${Var}/${Var}_mdv.sam -Sb -f 0x04 -o ./data/${Var}/${Var}_unmapped_mdv.bam 
+
+samtools view ./data/${Var}/${Var}_mdv.sam -Sb -F 0x04 -o ./data/${Var}/${Var}_mapped_mdv.bam
+
+rm ./data/${Var}/${Var}_mdv.sam
+
+# Sort the bam files by name of read
+samtools sort -n ./data/${Var}/${Var}_mapped_mdv.bam > ./data/${Var}/${Var}_mapped_mdv_alphsort.bam
+
+rm ./data/${Var}/${Var}_mapped_mdv.bam
+
+module load PySAM/0.6
+module load HTSeq/0.6.1
+# Count the genes per exon
+htseq-count \
+--format=bam \
+--stranded=yes \
+--order=name ./data/${Var}/${Var}_mapped_mdv_alphsort.bam \
+./data/ref/gallid_herpesvirus_2_genomic_htseq_format.gtf > \
+./data/gene_counts_mdv/${Var}_ensembl_gene_counts.txt
+
+qstat -f ${PBS_JOBID}
+########################################
+
+# Change to MacBook Pro
+cd /Users/Alec/Documents/Bioinformatics/MDV_Project/rna_gene_expression_analysis
+mkdir ./data/gene_counts
+mkdir ./data/gene_counts_mdv
+
+# Transfer the chicken genome gene counts files to my macbook pro for development purposes
+rsync -acp steepale@rsync.hpcc.msu.edu:/mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE/data/gene_counts/*_gene_counts.txt \
+/Users/Alec/Documents/Bioinformatics/MDV_Project/rna_gene_expression_analysis/data/gene_counts/
+
+# Transfer the mdv genome gene counts files to my macbook pro for development purposes
+rsync -acp steepale@rsync.hpcc.msu.edu:/mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE/data/gene_counts_mdv/*_gene_counts.txt \
+/Users/Alec/Documents/Bioinformatics/MDV_Project/rna_gene_expression_analysis/data/gene_counts_mdv/
+
+# Generate the R command to create a vector of sample names chicken genome
+(echo 'samples <- c'; \
+find ./data/gene_counts -name *_gene_counts.txt | \
+xargs -i basename {} | \
+sed 's/_gene_counts.txt//' | \
+sort | uniq | \
+sed '$ ! s/.*/"&",/; $ s/.*/"&")/' | \
+tr '\n' ' ') | tr '\n' '('
+# samples <- c("017733", "017738-1", "017741-1", "017748", "017756-3", "017766-1", "017777-3", "017787-2", "017794-1", "017798-1_1", "017798-1_2", "017820", "017824", "017833-1", "017834-2", "017835-1", "017841-3", "017842-2_1", "017842-2_2", "017855-1_1", "017855-1_2", "017863-1", "017884-2", "017901-2_1", "017901-2_2", "017906-1", "017911-1_1", "017911-1_2", "017918-3", "017927-2", "017936", "017939", "017945", "017947")
+
+
+# Generate the R command to read the sample names
+for ((i=1; i<=34; i++))
+do
+find ./data/gene_counts -name *_gene_counts.txt | \
+xargs -i basename {} | \
+sed 's/_gene_counts.txt//' | \
+sort | uniq | \
+sed "s/.*/& <- read.sample(samples[$i])/"
+done
+
+# Change to the R working directory
+cd ./data/gene_counts
+
+# Create a "Targets.txt" file that categorizes samples for analysis 
+# Low quality samples omitted
+#files   group   description
+#017733_ensembl_gene_counts.txt  NC      Young
+#017748_ensembl_gene_counts.txt  NC      Young
+#017820_ensembl_gene_counts.txt  NC      Young
+#017824_ensembl_gene_counts.txt  NC      Young
+#017936_ensembl_gene_counts.txt  NC      Mature
+#017939_ensembl_gene_counts.txt  NC      Mature
+#017945_ensembl_gene_counts.txt  NC      Mature
+#017947_ensembl_gene_counts.txt  NC      Mature
+#017738-1_ensembl_gene_counts.txt        Tu      Female
+#017741-1_ensembl_gene_counts.txt        Tu      Male
+#017766-1_ensembl_gene_counts.txt        Tu      Male
+#017777-3_ensembl_gene_counts.txt        Tu      Female
+#017787-2_ensembl_gene_counts.txt        Tu      Male
+#017794-1_ensembl_gene_counts.txt        Tu      Male
+#017798-1_1_ensembl_gene_counts.txt      Tu      Male
+#017798-1_2_ensembl_gene_counts.txt      Tu      Male
+#017833-1_ensembl_gene_counts.txt        Tu      Male
+#017835-1_ensembl_gene_counts.txt        Tu      Female
+#017841-3_ensembl_gene_counts.txt        Tu      Female
+#017842-2_1_ensembl_gene_counts.txt      Tu      Female
+#017842-2_2_ensembl_gene_counts.txt      Tu      Female
+#017855-1_1_ensembl_gene_counts.txt      Tu      Female
+#017855-1_2_ensembl_gene_counts.txt      Tu      Female
+#017863-1_ensembl_gene_counts.txt        Tu      Male
+#017884-2_ensembl_gene_counts.txt        Tu      Female
+#017901-2_1_ensembl_gene_counts.txt      Tu      Male
+#017901-2_2_ensembl_gene_counts.txt      Tu      Male
+#017906-1_ensembl_gene_counts.txt        Tu      Female
+#017911-1_1_ensembl_gene_counts.txt      Tu      Male
+#017911-1_2_ensembl_gene_counts.txt      Tu      Male
+#017918-3_ensembl_gene_counts.txt        Tu      Female
+#017927-2_ensembl_gene_counts.txt        Tu      Female
+
+
+# ./scripts/tumors_vs_normals_DE.R
+
+# OR
+
+# ./scripts/tumors_vs_normals_DESeq2_workflow.R
+
+# Adjust the ensembl gene id's from the EdgeR file to only contain human orthologs
+
+python ./scripts/chicken_2_human_orthologs.py \
+./data/NC_vs_Tu_topDEGenes_pval_0.001.txt \
+./data/NC_vs_Tu_topDEGenes_pval_0.001_human.txt
+
+python ./scripts/chicken_2_human_orthologs.py \
+./data/filtered_background_genes_gallus.txt \
+./data/filtered_background_genes_human.txt
+
+# ./scripts/chicken_2_human_orthologs.py
+#######################################################
+import os
+import sys
+import re
+
+# infile (open independently)
+infile = sys.argv[1]
+
+# outfile (open once and close once)
+outfile = open(sys.argv[2], 'w')
+
+# reference files
+orthologue_file = "/Users/Alec/Documents/Bioinformatics/MDV_Project/databases/ensembl/chicken_human_orthologues_full_annotation.txt"
+
+# Create a series of dictionaries of high confidence orthologues:
+# Create a dictionary of high confidence orthologues of chicken ensembl gene id 2 human ensembl gene id
+chicken2human_ortho_ensembl_gene_id = {}
+
+for o_line in open(orthologue_file):
+	if o_line[0] != '#':
+		o_line = o_line.rstrip()
+		o_col = o_line.split('\t')
+		c_e_gene_id = o_col[0]
+		c_e_gene_name = o_col[1]
+		c_e_gene_desc = o_col[2]
+		h_e_gene_id = o_col[3]
+		h_e_gene_name = o_col[4]
+		homology = o_col[5]
+		id_gene_h2c = o_col[6]
+		id_gene_c2h = o_col[7]
+		goc_score = o_col[8]
+		wga_cov = o_col[9]
+		ortho_score = o_col[10]
+		# Fill dictionary of high confidence orthologues of chicken ensembl gene id 2 human ensembl gene id
+		if c_e_gene_id not in chicken2human_ortho_ensembl_gene_id.keys() and ortho_score == '1':
+			chicken2human_ortho_ensembl_gene_id[c_e_gene_id] = set()
+			chicken2human_ortho_ensembl_gene_id[c_e_gene_id].add(h_e_gene_id)
+		if c_e_gene_id in chicken2human_ortho_ensembl_gene_id.keys() and ortho_score == '1':
+			chicken2human_ortho_ensembl_gene_id[c_e_gene_id].add(h_e_gene_id)
+
+#print(chicken2human_ortho_ensembl_gene_id.keys())
+
+# Iterate through the infile and collect additional information for each filter
+for inline in open(infile):
+	if not inline.startswith('EnsemblID'):
+		inline = inline.rstrip()
+		incol = inline.split('\t')
+		ingeneid = incol[0]
+		#print(ingeneid)
+		# Annotate gene if it has a high confidence orthologue
+		if ingeneid in chicken2human_ortho_ensembl_gene_id.keys():
+			ortho_status = 'Yes'
+			print(ingeneid)
+			ortho_set = chicken2human_ortho_ensembl_gene_id[ingeneid]
+			for orthologue in ortho_set:
+				orthologue = str(orthologue)
+				inline=re.sub(ingeneid, orthologue, inline)
+				outfile.write(inline + '\n')
+# Close outfile
+outfile.close()
+############################################
+
+python ./scripts/chicken_2_human_orthologs_HUGO.py \
+./data/NC_vs_Tu_topDEGenes_pval_0.001.txt \
+./data/NC_vs_Tu_topDEGenes_pval_0.001_human_hugo.txt
+
+python ./scripts/chicken_2_human_orthologs_HUGO.py \
+./data/filtered_background_genes_gallus.txt \
+./data/filtered_background_genes_human_hugo.txt
+
+# ./scripts/chicken_2_human_orthologs_HUGO.py
+#######################################################
+import os
+import sys
+import re
+
+# infile (open independently)
+infile = sys.argv[1]
+
+# outfile (open once and close once)
+outfile = open(sys.argv[2], 'w')
+
+# reference files
+orthologue_file = "/Users/Alec/Documents/Bioinformatics/MDV_Project/databases/ensembl/chicken_human_orthologues_full_annotation.txt"
+
+# Create a series of dictionaries of high confidence orthologues:
+# Create a dictionary of high confidence orthologues of chicken ensembl gene id 2 human ensembl gene id
+chicken2human_ortho_ensembl_gene_id = {}
+
+for o_line in open(orthologue_file):
+	if o_line[0] != '#':
+		o_line = o_line.rstrip()
+		o_col = o_line.split('\t')
+		c_e_gene_id = o_col[0]
+		c_e_gene_name = o_col[1]
+		c_e_gene_desc = o_col[2]
+		h_e_gene_id = o_col[3]
+		h_e_gene_name = o_col[4]
+		homology = o_col[5]
+		id_gene_h2c = o_col[6]
+		id_gene_c2h = o_col[7]
+		goc_score = o_col[8]
+		wga_cov = o_col[9]
+		ortho_score = o_col[10]
+		# Fill dictionary of high confidence orthologues of chicken ensembl gene id 2 human ensembl gene id
+		if c_e_gene_id not in chicken2human_ortho_ensembl_gene_id.keys() and ortho_score == '1':
+			chicken2human_ortho_ensembl_gene_id[c_e_gene_id] = set()
+			chicken2human_ortho_ensembl_gene_id[c_e_gene_id].add(h_e_gene_name)
+		if c_e_gene_id in chicken2human_ortho_ensembl_gene_id.keys() and ortho_score == '1':
+			chicken2human_ortho_ensembl_gene_id[c_e_gene_id].add(h_e_gene_name)
+
+#print(chicken2human_ortho_ensembl_gene_id.keys())
+
+# Iterate through the infile and collect additional information for each filter
+for inline in open(infile):
+	if not inline.startswith('EnsemblID'):
+		inline = inline.rstrip()
+		incol = inline.split('\t')
+		ingeneid = incol[0]
+		#print(ingeneid)
+		# Annotate gene if it has a high confidence orthologue
+		if ingeneid in chicken2human_ortho_ensembl_gene_id.keys():
+			ortho_status = 'Yes'
+			print(ingeneid)
+			ortho_set = chicken2human_ortho_ensembl_gene_id[ingeneid]
+			for orthologue in ortho_set:
+				orthologue = str(orthologue)
+				inline=re.sub(ingeneid, orthologue, inline)
+				outfile.write(inline + '\n')
+# Close outfile
+outfile.close()
+############################################
+
+### Cell type gene expression profile analysis
+# Convert HUGO symbols to high confidence chicken orthologs
+
+python ./scripts/HUGO_2_chicken_orthologs.py \
+./data/cell_type_expression_profiles.txt \
+./data/cell_type_expression_profiles_ortho.txt
+
+# ./scripts/HUGO_2_chicken_orthologs.py
+#######################################################
+import os
+import sys
+import re
+
+# infile (open independently)
+infile = sys.argv[1]
+
+# outfile (open once and close once)
+outfile = open(sys.argv[2], 'w')
+
+# reference files
+orthologue_file = "/Users/Alec/Documents/Bioinformatics/MDV_Project/databases/ensembl/chicken_human_orthologues_full_annotation.txt"
+
+# Create a series of dictionaries of high confidence orthologues:
+# Create a dictionary of high confidence orthologues of chicken ensembl gene id 2 human ensembl gene id
+HUGO2chicken_ortho_ensembl_gene_id = {}
+
+for o_line in open(orthologue_file):
+	if o_line[0] != '#':
+		o_line = o_line.rstrip()
+		o_col = o_line.split('\t')
+		c_e_gene_id = o_col[0]
+		c_e_gene_name = o_col[1]
+		c_e_gene_desc = o_col[2]
+		h_e_gene_id = o_col[3]
+		h_e_gene_name = o_col[4]
+		homology = o_col[5]
+		id_gene_h2c = o_col[6]
+		id_gene_c2h = o_col[7]
+		goc_score = o_col[8]
+		wga_cov = o_col[9]
+		ortho_score = o_col[10]
+		# Fill dictionary of high confidence orthologues of chicken ensembl gene id 2 human ensembl gene id
+		if h_e_gene_name not in HUGO2chicken_ortho_ensembl_gene_id.keys() and ortho_score == '1':
+			HUGO2chicken_ortho_ensembl_gene_id[h_e_gene_name] = set()
+			HUGO2chicken_ortho_ensembl_gene_id[h_e_gene_name].add(c_e_gene_id)
+		if h_e_gene_name in HUGO2chicken_ortho_ensembl_gene_id.keys() and ortho_score == '1':
+			HUGO2chicken_ortho_ensembl_gene_id[h_e_gene_name].add(c_e_gene_id)
+#print(HUGO2chicken_ortho_ensembl_gene_id.keys())
+
+# Write header
+outfile.write('\t'.join(['CELL_TYPE','HUGO','HS_GENE_NAME','GG_ENSEMBL'])+'\n')
+
+# Iterate through the infile and collect additional information for each filter
+for inline in open(infile):
+	if not inline.startswith('Cell') or not inline.startswith("\t"):
+		inline = inline.rstrip()
+		incol = inline.split('\t')
+		CELL_TYPE = incol[0]
+		HUGO = incol[1]
+		HS_GENE_NAME = incol[2]
+		# Annotate gene if it has a high confidence orthologue
+		if HUGO in HUGO2chicken_ortho_ensembl_gene_id.keys():
+			ortho_status = 'Yes'
+			#print(HUGO)
+			ortho_set = HUGO2chicken_ortho_ensembl_gene_id[HUGO]
+			for orthologue in ortho_set:
+				orthologue = str(orthologue)
+				outline = '\t'.join([CELL_TYPE,HUGO,HS_GENE_NAME,orthologue]) + '\n'
+				outfile.write(outline)
+# Close outfile
+outfile.close()
+############################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Adjust the ensembl gene id's from the DESeq2 file to only contain human orthologs
+
+python ./scripts/chicken_2_human_orthologs.py \
+./data/NC_vs_TU_all_samples_DESeq2.csv \
+./data/NC_vs_TU_all_samples_DESeq2_human_orthologs.csv
+
+# ./scripts/chicken_2_human_orthologs.py
+#######################################################
+import os
+import sys
+import re
+
+# infile (open independently)
+infile = sys.argv[1]
+
+# outfile (open once and close once)
+outfile = open(sys.argv[2], 'w')
+
+# reference files
+orthologue_file = "/Users/Alec/Documents/Bioinformatics/MDV_Project/databases/ensembl/chicken_human_orthologues_full_annotation.txt"
+
+# Create a series of dictionaries of high confidence orthologues:
+# Create a dictionary of high confidence orthologues of chicken ensembl gene id 2 human ensembl gene id
+chicken2human_ortho_ensembl_gene_id = {}
+
+for o_line in open(orthologue_file):
+	if o_line[0] != '#':
+		o_line = o_line.rstrip()
+		o_col = o_line.split('\t')
+		c_e_gene_id = o_col[0]
+		c_e_gene_name = o_col[1]
+		c_e_gene_desc = o_col[2]
+		h_e_gene_id = o_col[3]
+		h_e_gene_name = o_col[4]
+		homology = o_col[5]
+		id_gene_h2c = o_col[6]
+		id_gene_c2h = o_col[7]
+		goc_score = o_col[8]
+		wga_cov = o_col[9]
+		ortho_score = o_col[10]
+		# Fill dictionary of high confidence orthologues of chicken ensembl gene id 2 human ensembl gene id
+		if c_e_gene_id not in chicken2human_ortho_ensembl_gene_id.keys() and ortho_score == '1':
+			chicken2human_ortho_ensembl_gene_id[c_e_gene_id] = set()
+			chicken2human_ortho_ensembl_gene_id[c_e_gene_id].add(h_e_gene_id)
+		if c_e_gene_id in chicken2human_ortho_ensembl_gene_id.keys() and ortho_score == '1':
+			chicken2human_ortho_ensembl_gene_id[c_e_gene_id].add(h_e_gene_id)
+
+#print(chicken2human_ortho_ensembl_gene_id.keys())
+
+# Iterate through the infile and collect additional information for each filter
+for inline in open(infile):
+	if inline.startswith('"","baseMean"'):
+		outfile.write(inline)
+	if not inline.startswith('"","baseMean"'):
+		inline = inline.rstrip()
+		incol = inline.split(',')
+		ingeneid = incol[0]
+		ingeneid = re.sub('"', '', ingeneid)
+		#print(ingeneid)
+		# Annotate gene if it has a high confidence orthologue
+		if ingeneid in chicken2human_ortho_ensembl_gene_id.keys():
+			ortho_status = 'Yes'
+			#print(ingeneid)
+			ortho_set = chicken2human_ortho_ensembl_gene_id[ingeneid]
+			for orthologue in ortho_set:
+				orthologue = str(orthologue)
+				inline=re.sub(ingeneid, orthologue, inline)
+				outfile.write(inline + '\n')
+# Close outfile
+outfile.close()
+############################################
+
+# DAVID Analysis with gallus gallus genes
+# Generate background file
+cut -f1 ./data/raw_counts_cohort.txt | grep "ENSGALG" | sort | uniq \
+> ./data/DAVID_gallus_background.txt
+
+# Generate genes of interest file
+cut -f1 ./data/NC_vs_Tu_topDEGenes_pval_0.001.txt | grep "ENSGALG" | sort | uniq \
+> ./data/DAVID_gallus_topDEGenes_pval_0.001.txt
+
+### Pathway analysis with GSEA
+
+# GSEA User guide from Broad:
+# http://software.broadinstitute.org/gsea/doc/GSEAUserGuideFrame.html?_Preparing_Data_Files
+
+# Prepare data type for GSEA Analysis:
+# 1. Expression dataset
+# 2. Phenotype labels
+# 3. Gene sets
+# 4. Annotations file
+
+# 1. Generate the expression dataset.
+# This has already been done in R, just need to create a text file with appropriate gene labels (HUGO Symbols)
+
+# On Macbook Pro:
+# Create text file from expression set dataframe in R:
+# Created a gene expression text file with Ensemble chicken gene IDs in R script:
+# /Users/Alec/Documents/Bioinformatics/MDV_Project/rna_gene_expression_analysis/scripts/tumors_vs_normals_DE_2016_10_27.R
+# Location of gene expression text file:
+# /Users/Alec/Documents/Bioinformatics/MDV_Project/rna_gene_expression_analysis/data/gene_counts/expression_data_ensembl_chicken_gene_id.txt
+
+# Copy the gene expression file 
+sed 's/X017/017/g' ./data/raw_counts_cohort.txt > ./data/raw_counts_cohort_GSEA.txt
+vi ./data/raw_counts_cohort_GSEA.txt
+# Manually add "ENSEMBL_GENE_ID" to very first field in first line
+
+# Change header labels for annotation file and copy to project directory
+sed 's/Gene ID/ENSEMBLE_ID_CHICKEN/' /Users/Alec/Documents/Bioinformatics/MDV_Project/databases/ensembl/ensembl_chicken_gene_id2hugo_human_orthologue.txt | \
+sed 's/Human homology type/HOMOLOGY_TYPE_HUMAN/' | \
+sed 's/Human orthology confidence \[0 low, 1 high]/ORTHOLOGY_CONFIDENCE/' | \
+sed 's/Associated Gene Name/ENSEMBL_GENE_NAME_CHICKEN/' | \
+sed 's/HGNC symbol/HGNC_SYMBOL/' > ./data/ensembl_chicken_gene_id2hugo_human_orthologue.txt
+
+# Replace each ensembl chicken gene ID with the appropriate human HUGO gene symbol
+# Use the annotation file of chicken to human orthologues provided from ensembl biomart on 2017-02-12
+# File location: /Users/Alec/Documents/Bioinformatics/MDV_Project/databases/ensembl/ensembl_chicken_gene_id2hugo_human_orthologue.txt
+
+python ./scripts/replace_gene_id_with_hugo.py \
+./data/raw_counts_cohort_GSEA.txt \
+./data/raw_counts_cohort_GSEA_human_hugo.int
+
+# Make sure to reduce any redundancy
+(grep "HUGO_SYMBOL" ./data/raw_counts_cohort_GSEA_human_hugo.int;
+grep -v "HUGO_SYMBOL" ./data/raw_counts_cohort_GSEA_human_hugo.int | \
+sort | uniq) > ./data/raw_counts_cohort_GSEA_human_hugo.txt
+
+# ./scripts/replace_gene_id_with_hugo.py
+#################################
+import sys
+import re
+import os
+
+infile = sys.argv[1]
+outfile = open(sys.argv[2], 'w')
+ann_file = './data/ensembl_chicken_gene_id2hugo_human_orthologue.txt'
+
+# Create a dictionary for annotation purposes
+ann_dict = {}
+
+for ann_line in open(ann_file):
+	ann_line = ann_line.rstrip()
+	ann_col = ann_line.split('\t')
+	confidence = ann_col[2]
+	ann_ensembl_id = ann_col[0]
+	ann_hugo = ann_col[4]
+	if ann_ensembl_id not in ann_dict.keys() and confidence == '1':
+		ann_dict[ann_ensembl_id] = set()
+		ann_dict[ann_ensembl_id].add(ann_hugo)
+	elif ann_ensembl_id in ann_dict.keys() and confidence == '1':
+		ann_dict[ann_ensembl_id].add(ann_hugo)
+
+for line in open(infile):
+	if line.split('\t')[0] == 'ENSEMBL_GENE_ID':
+		#print(line)
+		#line = line.rstrip()
+		head_col = line.split('\t')
+		#print(line.replace(head_col[0], 'HUGO_SYMBOL'))
+		outfile.write(line.replace(head_col[0], 'HUGO_SYMBOL'))
+	elif line.split('\t')[0][0:6] == 'ENSGAL':
+		#line = line.rstrip()
+		#print(line)
+		col = line.split('\t')
+		ensembl_id = col[0]
+		if ensembl_id in ann_dict.keys():
+			for hugo in ann_dict[ensembl_id]:
+				outfile.write(line.replace(ensembl_id, hugo))
+outfile.close()
+###################################
+
+### Pathway analysis with Panther
+
+# http://www.pantherdb.org/tools/compareToRefList.jsp
+
+# Create targets file
+vi ./data/targets_IKZF1.txt
+
+#files	group	description
+#017733_ensembl_gene_counts.txt	NC	NC
+#017748_ensembl_gene_counts.txt	NC	NC
+#017820_ensembl_gene_counts.txt	NC	NC
+#017824_ensembl_gene_counts.txt	NC	NC
+#017936_ensembl_gene_counts.txt	NC	NC
+#017939_ensembl_gene_counts.txt	NC	NC
+#017945_ensembl_gene_counts.txt	NC	NC
+#017947_ensembl_gene_counts.txt	NC	NC
+#017738-1_ensembl_gene_counts.txt	Tu	IKZF1
+#017741-1_ensembl_gene_counts.txt	Tu	WT
+#017766-1_ensembl_gene_counts.txt	Tu	WT
+#017777-3_ensembl_gene_counts.txt	Tu	IKZF1
+#017787-2_ensembl_gene_counts.txt	Tu	WT
+#017794-1_ensembl_gene_counts.txt	Tu	WT
+#017798-1_1_ensembl_gene_counts.txt	Tu	WT
+#017798-1_2_ensembl_gene_counts.txt	Tu	WT
+#017833-1_ensembl_gene_counts.txt	Tu	IKZF1
+#017835-1_ensembl_gene_counts.txt	Tu	IKZF1
+#017841-3_ensembl_gene_counts.txt	Tu	IKZF1
+#017842-2_1_ensembl_gene_counts.txt	Tu	IKZF1
+#017842-2_2_ensembl_gene_counts.txt	Tu	IKZF1
+#017855-1_1_ensembl_gene_counts.txt	Tu	IKZF1
+#017855-1_2_ensembl_gene_counts.txt	Tu	IKZF1
+#017863-1_ensembl_gene_counts.txt	Tu	IKZF1
+#017884-2_ensembl_gene_counts.txt	Tu	IKZF1
+#017901-2_1_ensembl_gene_counts.txt	Tu	IKZF1
+#017901-2_2_ensembl_gene_counts.txt	Tu	IKZF1
+#017906-1_ensembl_gene_counts.txt	Tu	IKZF1
+#017911-1_1_ensembl_gene_counts.txt	Tu	IKZF1
+#017911-1_2_ensembl_gene_counts.txt	Tu	IKZF1
+#017918-3_ensembl_gene_counts.txt	Tu	IKZF1
+#017927-2_ensembl_gene_counts.txt	Tu	IKZF1
+
+# Run DE analysis in R to generate gene lists
+# ./scripts/panther_pathway_analysis_IKZF1.R
+
+
+
+# Collect gene lists and convert to human ortholog gene symbol
+for infile in ./data/Tu.Tu-NC.NC_topDEGenes_pval_0.005.txt
+do
+echo ${infile}
+down_file=`echo ${infile} | sed 's/.txt/_down.txt/g'`
+up_file=`echo ${infile} | sed 's/.txt/_up.txt/g'`
+downoutfile=`echo ${down_file} | sed 's/.txt/_HUGO.txt/g'`
+upoutfile=`echo ${up_file} | sed 's/.txt/_HUGO.txt/g'`
+outfile=`echo ${infile} | sed 's/.txt/_HUGO.txt/g'`
+# Extract upregulated genes
+sed 's/ /_/g' ${infile} | awk '$6 < 0' > ${down_file}
+# Extract down regulated genes
+sed 's/ /_/g' ${infile} | awk '$6 > 0' > ${up_file}
+# Infile conversion
+python ./scripts/chicken_2_human_orthologs_HUGO_panther.py \
+${infile} \
+${outfile}
+# Down file conversion
+python ./scripts/chicken_2_human_orthologs_HUGO_panther.py \
+${down_file} \
+${downoutfile}
+# Up file conversion
+python ./scripts/chicken_2_human_orthologs_HUGO_panther.py \
+${up_file} \
+${upoutfile}
+done
+
+# Convert the background list of genes into proper orthologous gene ID's
+for infile in ./data/filtered_background_genes_gallus.txt
+do
+echo ${infile}
+outfile=`echo ${infile} | sed 's/.txt/_HUGO.txt/g'`
+python ./scripts/chicken_2_human_orthologs_HUGO_panther.py \
+${infile} \
+${outfile}
+done
+
+
+# ./scripts/chicken_2_human_orthologs_HUGO_panther.py
+#######################################################
+import os
+import sys
+import re
+
+# infile (open independently)
+infile = sys.argv[1]
+
+# outfile (open once and close once)
+outfile = open(sys.argv[2], 'w')
+
+# reference files
+orthologue_file = "/Users/Alec/Documents/Bioinformatics/MDV_Project/databases/ensembl/chicken_human_orthologues_full_annotation.txt"
+
+# Create a series of dictionaries of high confidence orthologues:
+# Create a dictionary of high confidence orthologues of chicken ensembl gene id 2 human ensembl gene id
+chicken2human_ortho_ensembl_gene_id = {}
+chicken2human_ortho_ensembl_HUGO = {}
+
+for o_line in open(orthologue_file):
+	if o_line[0] != '#':
+		o_line = o_line.rstrip()
+		o_col = o_line.split('\t')
+		c_e_gene_id = o_col[0]
+		c_e_gene_name = o_col[1]
+		c_e_gene_desc = o_col[2]
+		h_e_gene_id = o_col[3]
+		h_e_gene_name = o_col[4]
+		homology = o_col[5]
+		id_gene_h2c = o_col[6]
+		id_gene_c2h = o_col[7]
+		goc_score = o_col[8]
+		wga_cov = o_col[9]
+		ortho_score = o_col[10]
+		# Fill dictionary of high confidence orthologues of chicken ensembl gene id 2 human ensembl gene id
+		if c_e_gene_id not in chicken2human_ortho_ensembl_gene_id.keys() and ortho_score == '1':
+			chicken2human_ortho_ensembl_gene_id[c_e_gene_id] = set()
+			chicken2human_ortho_ensembl_gene_id[c_e_gene_id].add(h_e_gene_id)
+		if c_e_gene_id in chicken2human_ortho_ensembl_gene_id.keys() and ortho_score == '1':
+			chicken2human_ortho_ensembl_gene_id[c_e_gene_id].add(h_e_gene_id)
+		# Fill dictionary of high confidence orthologues of chicken ensembl gene id 2 HUGO names
+		if c_e_gene_id not in chicken2human_ortho_ensembl_HUGO.keys() and ortho_score == '1':
+			chicken2human_ortho_ensembl_HUGO[c_e_gene_id] = set()
+			chicken2human_ortho_ensembl_HUGO[c_e_gene_id].add(h_e_gene_name)
+		if c_e_gene_id in chicken2human_ortho_ensembl_HUGO.keys() and ortho_score == '1':
+			chicken2human_ortho_ensembl_HUGO[c_e_gene_id].add(h_e_gene_name)
+
+#print(chicken2human_ortho_ensembl_HUGO.keys())
+
+# Iterate through the infile and collect additional information for each filter
+for inline in open(infile):
+	if not inline.startswith('EnsemblID'):
+		inline = inline.rstrip()
+		incol = inline.split('\t')
+		ingeneid = incol[0]
+		# Annotate gene if it has a high confidence orthologue
+		if ingeneid in chicken2human_ortho_ensembl_HUGO.keys():
+			ortho_status = 'Yes'
+			print(ingeneid)
+			ortho_set = chicken2human_ortho_ensembl_HUGO[ingeneid]
+			for orthologue in ortho_set:
+				orthologue = str(orthologue)
+				outfile.write(orthologue + '\n')
+# Close outfile
+outfile.close()
+###########################################
+
+# Perform KEGG analysis with gprofiler
+# Outfiles:
+#./data/gprofiler_results_Tu.Tu-NC.NC2_KEGG.txt
+# KEGG Pathways
+Arrhythmogenic right ventricular cardiomyopathy (ARVC)
+Focal adhesion
+PI3K-Akt signaling pathway
+Prostate cancer
+Pathways in cancer (Burgess)
+Folate biosynthesis
+ECM-receptor interaction (Burgess)
+MAPK signaling pathway
+Tight junction
+Biosynthesis of amino acids
+Human papillomavirus infection
+EGFR tyrosine kinase inhibitor resistance
+Hypertrophic cardiomyopathy (HCM)
+Amoebiasis
+Ras signaling pathway
+Dilated cardiomyopathy (DCM)
+AGE-RAGE signaling pathway in diabetic complications
+Choline metabolism in cancer
+Axon guidance
+Rap1 signaling pathway
+Glutathione metabolism
+Thiamine metabolism
+T cell receptor signaling pathway
+Antifolate resistance
+Gap junction
+Hippo signaling pathway
+Lysine degradation
+Fructose and mannose metabolism
+Protein digestion and absorption
+HTLV-I infection
+Adherens junction
+Small cell lung cancer
+Carbon metabolism
+# Panther Pathways
+Cadherin signalling pathway
+Integrin Signalling pathway (Burgess)
+# Reactome Pathways
+Laminin interactions (R-HSA-3000157)
+Collagen biosynthesis and modifying enzymes (R-HSA-1650814)
+Assembly of collagen fibrils and other multimeric structures (R-HSA-2022090)
+ECM proteoglycans (R-HSA-3000178)
+Non-integrin membrane-ECM interactions (R-HSA-3000171)
+Integrin cell surface interactions (R-HSA-216083)
+Collagen formation (R-HSA-1474290)
+Degradation of the extracellular matrix (R-HSA-1474228)
+Extracellular matrix organization (R-HSA-1474244)
+Gene Expression (R-HSA-74160) (Burgess)
+Infectious disease (R-HSA-5663205)
+Major pathway of rRNA processing in the nucleolus and cytosol (R-HSA-6791226)
+rRNA processing (R-HSA-72312)
+rRNA processing in the nucleus and cytosol (R-HSA-8868773)
+Translation (R-HSA-72766)
+# GO analysis BP (panther)
+integrin-mediated signaling pathway (Hu, Schjerven, Burgess) 
+extracellular matrix organization (Include) (Hu)
+neuron migration (Schjerven)
+stem cell differentiation (include)
+mesenchymal cell differentiation (include)
+cell junction organization
+response to transforming growth factor beta (Burgess)
+cellular response to transforming growth factor beta stimulus (Burgess)
+positive regulation of protein kinase B signaling
+mesenchymal cell differentiation
+cell adhesion (Burgess, Schjerven, Hu) 
+angiogenesis (Schjerven)
+axon guidance (Hu, Schjerven)
+cell migration (Schjerven)
+cell motility (Schjerven)
+axon development (Include)
+morphogenesis of an epithelium (Hu)
+epithelium development (Hu)
+regulation of epithelial cell proliferation (Hu)
+actin filament-based process (Hu)
+chemotaxis (Schjerven)
+cell differentiation
+intracellular transport
+
+
+# GO analysis BP (gprofiler)
+Notch signaling pathway (Find Notch source)
+smoothened signaling pathway 
+Leukocyte differentiation (Schjerven)
+platelet-derived growth factor receptor signaling pathway
+Ras protein signal transduction
+regulation of small GTPase mediated signal transduction (Hu)
+
+
+grep -w \
+-e "integrin-mediated signaling pathway" \
+-e "extracellular matrix organization" \
+-e "neuron migration" \
+-e "stem cell differentiation" \
+-e "mesenchymal cell differentiation" \
+-e "response to transforming growth factor beta" \
+-e "cellular response to transforming growth factor beta stimulus" \
+-e "positive regulation of protein kinase B signaling" \
+-e "cell adhesion" \
+-e "angiogenesis" \
+-e "axon guidance" \
+-e "cell migration" \
+-e "cell motility" \
+-e "morphogenesis of an epithelium" \
+-e "regulation of epithelial cell proliferation" \
+-e "actin filament-based process" \
+-e "chemotaxis" \
+-e "cell differentiation" \
+-e "intracellular transport" \
+./data/panther_results_Tu.IKZF1-NC.NC2_GO.txt > ./data/panther_results_Tu.IKZF1-NC.NC2_GO.int
+
+# Manually add header
+#GO_BP_PROCESS	BACKGROUND	QUERY	EXPECTED	+/-	FOLD_ENRICHMENT	P-VAL	FDR
+vi ./data/panther_results_Tu.IKZF1-NC.NC2_GO.int
+
+# Generate -log10 for FDR values
+
+python ./scripts/log_fdr_panther.py \
+./data/panther_results_Tu.IKZF1-NC.NC2_GO.int \
+./data/panther_results_Tu.IKZF1-NC.NC2_GO_set_log10.txt
+
+# ./scripts/log_fdr_panther.py
+###################################
+import os
+import sys
+import math
+
+infile = sys.argv[1]
+outfile = open(sys.argv[2], 'w')
+
+for line in open(infile):
+	if line.startswith('#'):
+		line = line.rstrip()
+		outfile.write(line + '\t' + '-LOG10' + '\n')
+	if not line.startswith('#'):
+		line = line.rstrip()
+		col = line.split('\t')
+		FDR = float(col[7])
+		LOG = str(-math.log(FDR, 10))[0:4]
+		outfile.write(line + '\t' + LOG+ '\n')
+outfile.close()
+###################################
+
+
+
+
+
+# Superenhancer Reprogramming drives a B-cell-epithelial transition and high-risk leukemia (Hu)
+Membrane organization
+GTPase regulatory activity
+Cell projection
+Calcium ion binding
+Cell adhesionJak-STAT signaling pathway
+Immune Response
+Leukocyte Activation
+Adherens junction
+Vesicle Transport 
+Cytokine Binding
+Actin Filament Process
+Intracellular Signalling Cascade
+Immune System Development
+Axon Guidance
+Integrin Signaling
+
+
+
+
+# Burgess Paper
+Integrin Signalling (Similar)
+PCD signaling 
+molecular mechanisms of cancer (Similar)
+NF-κB activation by viruses
+p53 signaling
+PPARα/RXRα activation 
+PTEN signaling
+BRCA1 in DNA damage
+VEGF signaling
+Wnt/β-catenin signaling (Similar)
+lymphotoxin β receptor signaling (important in non- canonical NF-κB activation pathway induction)
+TGF-β signaling (insensitivity to antigrowth signals)
+nitric oxide signaling (important in angiogenesis)
+
+# Genetic Analysis of Ikaors Target Genes and Tumor suppressor function in BCR-ABL1_ pre-B ALL (Schjerven)
+Activation of lymphocytes
+Contact Growth inhibition
+transport of Ca2+
+Cell death of immune cells
+Proliferation of B lymphocytes
+differentiation of B lymphocytes
+NFKB signaling
+cAMP-mediated signalingWnt/B-catenin signaling
+Adhesion of Immune cells
+angiogenesis
+Migration of neurons
+Invasion of cells
+Guidance of Axons
+Chemotaxis
+STAT3 Pathway
+Cell surface receptor linked signaling
+FXR/RXR Activation
+Rho Protein signal transduction
+branching of blood vessel
+cell movement of leukemia cell lines
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Select only the wildtype samples followed by samples with an IKZF1 mutation
+#cut -f1-9,13,21,22,27,28,30,31,32 ./data/expression_data_human_hugo_ortho_TMM.txt > \
+#./data/expression_data_human_hugo_ortho_IKZF1_mut_vs_wt.txt 
+
+#All samples rearranged by IKZF1 perturbation
+#cat ./data/expression_data_human_hugo_ortho_TMM.txt \
+#> ./data/expression_data_human_hugo_ortho_IKZF1_mut_vs_wt.txt
+
+# Samples with IKZF1 mutations
+# 017918-3
+# 017756-3
+# 017777-3
+# 017842-2_2
+# 017842-2
+# 017901-2_2
+# 017901-2
+# 017911-1_2
+# 017911-1 
+
+# 2. Generate Phenotype labels
+
+python ./scripts/generate_phenotype_labels_file.py \
+./data/expression_data_human_hugo_ortho_TMM.txt \
+./data/phenotype_labels_tum_vs_norm.cls
+
+# ./scripts/generate_phenotype_labels_file.py
+##########################################
+import sys
+import re
+
+infile = sys.argv[1]
+outfile = open(sys.argv[2], 'w')
+
+for line in open(infile):
+	if line.startswith('HUGO_SYMBOL'):
+		head_col = line.split('\t')
+		samples = head_col[1:]
+		sample_num = str(len(samples))
+		classes = '2'
+# Write the first line
+outfile.write(' '.join([sample_num,classes,'1'])+'\n')
+# Write the second line
+outfile.write('# Tumor Normal'+'\n')
+# Create an empty list of classes
+class_list = []
+for sample in samples:
+	if re.search('-', sample):
+		class_list.append('TUM')
+	elif not re.search('-', sample):
+		class_list.append('NORM')
+outfile.write(' '.join(class_list)+'\n')
+outfile.close()
+##########################################
+
+# 3. Generate gene sets
+# From http://software.broadinstitute.org/gsea/msigdb/search.jsp
+# Specific gene set: http://software.broadinstitute.org/gsea/msigdb/geneset_page.jsp?geneSetName=GSE15330_HSC_VS_LYMPHOID_PRIMED_MULTIPOTENT_PROGENITOR_IKAROS_KO_UP&keywords=IKAROS
+# Version history: "5.1: First introduced"
+
+# Faulty Ikaros gene set enrichment attempted below. Instead, use entire gene expression data to perform enriched pathways analysis
+# by GSEA analysis (minimum hypergeometric)
+
+# Create a gene set of all genes in the analysis
+grep -v "^HUGO_SYMBOL" ./data/expression_data_human_hugo_ortho_TMM.txt | cut -f1 | head -n450 \
+> ./data/all_queried_filtered_genes_TuvsNC_TMM_geneset.gmx
+
+
+
+### Count the number of Mutant Alleles on each RNA-mapped BAM file (MSUHPCC)
+for bam in `find ./data/* -name "*_paired_norRNA_sorted.bam"`
+do
+echo ${bam}
+qsub ./scripts/resort_bam_extract_IKZF1.sh -v Var=${bam}
+done
+
+# ./scripts/resort_bam_extract_IKZF1.sh
+########################################
+#!/bin/bash -login
+#PBS -l nodes=1:ppn=1,walltime=00:02:00:00,mem=20gb
+#PBS -j oe
+
+# working directory:
+cd /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE
+
+# Load samtools
+module load SAMTools/1.3.1
+
+sort_bam=`echo ${Var} | sed 's/sorted.bam/sort.bam/'`
+out_bam=`echo ${Var} | sed 's/sorted.bam/sorted_IKZF1.bam/'`
+echo ${sort_bam}
+echo ${out_bam}
+samtools sort ${Var} > ${sort_bam}
+samtools index ${sort_bam}
+samtools view -hb ${sort_bam} 2:80915200-80986100 > ${out_bam}
+samtools index ${out_bam}
+
+qstat -f ${PBS_JOBID}
+########################################
+
+### Cluster3.0 Clustering analysis
+
+# Replace each ensembl chicken gene ID with the appropriate human HUGO gene symbol
+# Use the annotation file of chicken to human orthologues provided from ensembl biomart on 2017-02-12
+# File location: /Users/Alec/Documents/Bioinformatics/MDV_Project/databases/ensembl/ensembl_chicken_gene_id2hugo_human_orthologue.txt
+
+python ./scripts/replace_gene_id_with_hugo.py \
+./data/read_counts_TMM_filtered_GG_Ensembl_ID.txt \
+./data/read_counts_TMM_filtered_HUGO.int
+
+# Make sure to reduce any redundancy
+(grep "HUGO_SYMBOL" ./data/read_counts_TMM_filtered_HUGO.int;
+grep -v "HUGO_SYMBOL" ./data/read_counts_TMM_filtered_HUGO.int | \
+sort | uniq) > ./data/read_counts_TMM_filtered_HUGO.txt
+
+# ./scripts/replace_gene_id_with_hugo.py
+#################################
+import sys
+import re
+import os
+
+infile = sys.argv[1]
+outfile = open(sys.argv[2], 'w')
+ann_file = './data/ensembl_chicken_gene_id2hugo_human_orthologue.txt'
+
+# Create a dictionary for annotation purposes
+ann_dict = {}
+
+for ann_line in open(ann_file):
+	ann_line = ann_line.rstrip()
+	ann_col = ann_line.split('\t')
+	confidence = ann_col[2]
+	ann_ensembl_id = ann_col[0]
+	ann_hugo = ann_col[4]
+	if ann_ensembl_id not in ann_dict.keys() and confidence == '1':
+		ann_dict[ann_ensembl_id] = set()
+		ann_dict[ann_ensembl_id].add(ann_hugo)
+	elif ann_ensembl_id in ann_dict.keys() and confidence == '1':
+		ann_dict[ann_ensembl_id].add(ann_hugo)
+
+for line in open(infile):
+	if line.split('\t')[0] == 'ENSEMBL_GENE_ID':
+		#print(line)
+		#line = line.rstrip()
+		head_col = line.split('\t')
+		#print(line.replace(head_col[0], 'HUGO_SYMBOL'))
+		outfile.write(line.replace(head_col[0], 'HUGO_SYMBOL'))
+	elif line.split('\t')[0][0:6] == 'ENSGAL':
+		#line = line.rstrip()
+		#print(line)
+		col = line.split('\t')
+		ensembl_id = col[0]
+		if ensembl_id in ann_dict.keys():
+			for hugo in ann_dict[ensembl_id]:
+				outfile.write(line.replace(ensembl_id, hugo))
+outfile.close()
+###################################
+
+for gene in SLC26A9 DHX35 SETD1B CHDH AKAP1 LTF TF CCDC174 ZPR1 DDX54 NEFH NBEAL1 THUMPD2 MUM1 MUM1L1 L3MBTL2 IKZF1 BAG1 DDX43 DDX53 CHST9 SAA2 SAA1 SAA4 SAA2-SAA4 AMBP SSPO KRT9 PARP4 FLT3 AKAP12 HLA-G HLA-E MR1 HLA-B HLA-F HLA-C HLA-A HFE AZGP1
+do
+grep ${gene} ./data/somatic_snvs_and_indels_final_priorityv2.txt
+done
+
+
+
+
+
+
+
+

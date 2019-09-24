@@ -1,0 +1,558 @@
+#===============================================================================
+#
+#         FILE: /Users/Alec/Documents/Bioinformatics/MDV_Project/rna_gene_expression_analysis/chicken_MDV_genome_main_documentation.txt
+#
+#        USAGE: Simply a documentation script, analysis inside
+#
+#  DESCRIPTION:  This script serves as a step by step documentation script and development script for the analysis of bulk RNASeq captured from MDV gonadal tumors and matched normals
+# REQUIREMENTS:  None
+#        NOTES:  ---
+#       AUTHOR:  Alec Steep, steepale@msu.edu
+#  AFFILIATION:  Michigan State University (MSU), East Lansing, MI, United States
+#				         USDA ARS Avian Disease and Oncology Lab (ADOL), East Lansing, MI, United States
+#				         Technical University of Munich (TUM), Weihenstephan, Germany
+#      VERSION:  1.0
+#      CREATED:  2018.07.18
+#     REVISION:  
+#===============================================================================
+
+# Permanent PROJECT DIRECTORY (MSU HPCC)
+# /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE/chicken_MDV_genome
+
+cd /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE/chicken_MDV_genome
+
+# Make directories
+mkdir -p ./{data,scripts,analysis,plots,archive,job_reports}
+mkdir ./data/mdv_genome
+mkdir ./data/chicken_mdv_genome
+mkdir ./data/fastq
+mkdir ./data/bams
+mkdir ./data/STAR
+mkdir ./data/gene_counts
+mkdir ../data/stranded_test
+mkdir ../data/unstranded
+mkdir ../data/firststrand
+mkdir ../data/secondstrand
+
+# Objective: Bulk RNASeq has already been performed on these samples and results generated; however, the MDV genome 
+# was not previously included. We will rerun this analysis with the MDV genome as an extra chromosome on the Galgal5 genome 
+# and with slightly different methodologies (STAR aligner and read counts in R) based on the HarvardX Biomedical Data 
+# Science Open Online Training and recommendations from Rafa and Mike Love.
+
+# Computational analysis based on: 
+# http://rafalab.github.io/pages/harvardx.html
+
+# We will start at the mapping step. All prior analyses can be found from our rnaseq analysis documentation:
+# /Users/Alec/Documents/Bioinformatics/MDV_Project/rna_gene_expression_analysis/rna_gene_expression_analysis_main_documentation.txt
+
+# Copy the galgal5, MDV and galgal5+MDV genomes and gtf files
+cp /mnt/research/ADOL/Cheng-Lab-Data/common/scRNA_splenocytes/data/Gallus_gallus_5.0-ensembl_gallid_herpesvirus_2-refseq_genomic_combo.* \
+./data/
+cp /mnt/research/ADOL/Cheng-Lab-Data/common/scRNA_splenocytes/data/gallid_herpesvirus_2_genomic.* \
+./data/
+cp /mnt/research/ADOL/Cheng-Lab-Data/common/scRNA_splenocytes/data/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel.fa \
+./data/
+cp /mnt/research/ADOL/Cheng-Lab-Data/common/scRNA_splenocytes/data/Gallus_gallus.Gallus_gallus-5.0.92.gtf \
+./data/
+
+# Here is how the MDV gtf file was produced
+# Collect the MDV reference genome and gtf file
+# MDV Genome collected from https://www-ncbi-nlm-nih-gov.proxy1.cl.msu.edu/nuccore/NC_002229.3
+# Could only collect a gff3 file for MDV genome, so we will convert this to a gtf file with a custom script (cufflinks is insufficient for MDV annotation)
+# Useful info: 
+# http://blog.nextgenetics.net/?e=27
+# http://ccb.jhu.edu/software/stringtie/gff.shtml
+## Here's an example of how to convert the gff3 file to a gtf file (with cufflinks version 2.2.1)
+## Examine the gtf file conversion and see of there are potential errors with gffread
+module load cufflinks/2.2.1
+gffread -E annotation.gtf -o- | less
+gffread -E annotation.gff -T -o- | more # -E stands for potential errors -T stands for gtf format as output
+# I have made the conclusion that perhaps a custom script is best
+# However, if you wanted to convert a gff3 to a gtf, this is how you'd do it
+gffread \
+./data/gallid_herpesvirus_2_genomic.gff3 \
+-T \
+-o ./data/gallid_herpesvirus_2_genomic.gtf # Don't do it... just don't.
+
+# Instead, perform a custom conversion. Note: exon_ids are insufficient. Manual annotation may be necessary.
+python ./scripts/MDV_gff3_to_gtf.py \
+./data/gallid_herpesvirus_2_genomic.gff3 \
+./data/gallid_herpesvirus_2_genomic_exon_adjusted.gtf \
+./data/gallid_herpesvirus_2_gene_table.txt
+
+# ./scripts/MDV_gff3_to_gtf.py
+######################################################
+import os
+import sys
+
+infile = sys.argv[1]
+outfile = open(sys.argv[2], 'w')
+gene_table = open(sys.argv[3], 'w')
+
+# The gff3 and gtf files are conveniently ordered by feature as 
+# gene, transcript, exon, cds or some subset but always in that hierarchy
+
+# Variables
+keeps = ('gene','transcript','exon','CDS')
+
+# Write a header for the gene table file
+gene_table.write('\t'.join(['GENE_ID','PRODUCT'])+'\n')
+gene_table.write('\t'.join(['5291091','vTR(5291091):telomerase_RNA_subunit'])+'\n')
+gene_table.write('\t'.join(['5291094','vTR(5291094):telomerase_RNA_subunit'])+'\n')
+
+# Make one pass and construct a dictionary
+# The gene ID's or parent ID's will be the keys, and the values will be lists
+for line in open(infile):
+	if line.startswith("##"):
+		outfile.write(line)
+	if not line.startswith("#"):
+		col = line.rstrip().split('\t')
+		CHROM = col[0]
+		ANNO = col[1]
+		FEATURE = col[2]
+		START = col[3]
+		END = col[4]
+		SCORE = col[5]
+		STRAND = col[6]
+		FRAME = col[7]
+		ATTR = col[8]
+		# Only collect attributes for genes and features associated with genes
+		if FEATURE in keeps:
+			if FEATURE == 'gene':
+				# When a new gene is encountered, reset all variables
+				gene_id,gene_source,gene_biotype,gene_name,transcript_id,transcript_source,transcript_biotype,exon_id,protein_id = ["NA"] * 9
+				# Assign: gene_id, gene_biotype, gene_name, gene_source
+				gene_id = ATTR.split('Dbxref=GeneID:')[1].split(';')[0] # Absolute
+				gene_source = ANNO # Absolute
+				gene_biotype = ATTR.split('gene_biotype=')[1].split(';')[0] # Absolute
+				gene_name = ATTR.split('gene=')[1].split(';')[0] # Conditional
+				Name = ATTR.split('Name=')[1].split(';')[0]
+				if gene_name != "NA": # If gene_name is assigned
+					GENE_ATTR = 'gene_id "'+gene_id+'"; '+'gene_source "'+gene_source+'"; '+'gene_biotype "'+gene_biotype+'"; '+'gene_name "'+gene_name+'";'
+				elif gene_name == "NA": # If gene_name is not assigned
+					GENE_ATTR = 'gene_id "'+gene_id+'"; '+'gene_source "'+gene_source+'"; '+'gene_biotype "'+gene_biotype+'";'
+				outfile.write('\t'.join([CHROM,ANNO,FEATURE,START,END,SCORE,STRAND,FRAME,GENE_ATTR])+'\n')
+			elif FEATURE == 'transcript':
+				# Assign: transcript_id, Parent, transcript_source
+				transcript_id = ATTR.split('ID=')[1].split(';')[0]
+				transcript_source = ANNO
+				transcript_biotype = gene_biotype # There is no transcript biotype annotation in MDV gff3 file, so we will use gene
+				# Absolutes: gene_id (1), transcript_id(2), gene_source(3), gene_biotype(4),transcript_source(5), transcript_biotype(6)
+				# Conditionals: gene_name(2.1)
+				if gene_name != "NA": # If gene_name is assigned
+					TRANS_ATTR = 'gene_id "'+gene_id+'"; '+'transcript_id "'+transcript_id+'"; '+'gene_name "'+gene_name+'"; '+'gene_source "'+gene_source+'"; '+'gene_biotype "'+gene_biotype+'"; '+'transcript_source "'+transcript_source+'"; '+'transcript_biotype "'+transcript_biotype+'";'
+				elif gene_name == "NA": # If gene_name is not assigned
+					TRANS_ATTR = 'gene_id "'+gene_id+'"; '+'transcript_id "'+transcript_id+'"; '+'gene_source "'+gene_source+'"; '+'gene_biotype "'+gene_biotype+'"; '+'transcript_source "'+transcript_source+'"; '+'transcript_biotype "'+transcript_biotype+'";'
+				outfile.write('\t'.join([CHROM,ANNO,FEATURE,START,END,SCORE,STRAND,FRAME,TRANS_ATTR])+'\n')
+			elif FEATURE == 'exon':
+				exon_id = ATTR.split('ID=')[1].split(';')[0]
+				# Absolutes: gene_id(1), transcript_id(2), gene_source(4), gene_biotype(5), transcript_source(6), transcript_biotype(7),exon_id(8)
+				# Conditionals: gene_name(3)
+				if gene_name != "NA": # If gene_name is assigned
+					EXON_ATTR = 'gene_id "'+gene_id+'"; '+'transcript_id "'+transcript_id+'"; '+'gene_name "'+gene_name+'"; '+'gene_source "'+gene_source+'"; '+'gene_biotype "'+gene_biotype+'"; '+'transcript_source "'+transcript_source+'"; '+'transcript_biotype "'+transcript_biotype+'"; '+'exon_id "'+exon_id+'";'
+				elif gene_name == "NA": # If gene_name is not assigned
+					EXON_ATTR = 'gene_id "'+gene_id+'"; '+'transcript_id "'+transcript_id+'"; '+'gene_source "'+gene_source+'"; '+'gene_biotype "'+gene_biotype+'"; '+'transcript_source "'+transcript_source+'"; '+'transcript_biotype "'+transcript_biotype+'"; '+'exon_id "'+exon_id+'";'
+				outfile.write('\t'.join([CHROM,ANNO,FEATURE,START,END,SCORE,STRAND,FRAME,EXON_ATTR])+'\n')
+			elif FEATURE == 'CDS':
+				# Absolutes: gene_id(1), transcript_id(2), gene_source(4), gene_biotype(5), transcript_source(6), transcript_biotype(7),protein_id(8),
+				# Conditionals: gene_name(3)
+				protein_id = ATTR.split('protein_id=')[1].split(';')[0]
+				product = ATTR.split('product=')[1].split(';')[0].replace(' ','_')
+				product = Name+'('+gene_id+'):'+product
+				# HTSEQ will only count 1 feature type. The default type is exon and is prefered for ensemble gtf files.
+				# We will merge this file with the chicken ensembl file and therefore we will adjust each CDS to also be considered as an exon for counting purposes.
+				if gene_name != "NA": # If gene_name is assigned
+					EXON_ATTR = 'gene_id "'+gene_id+'"; '+'transcript_id "'+transcript_id+'"; '+'gene_name "'+gene_name+'"; '+'gene_source "'+gene_source+'"; '+'gene_biotype "'+gene_biotype+'"; '+'transcript_source "'+transcript_source+'"; '+'transcript_biotype "'+transcript_biotype+'"; '+'exon_id "'+exon_id+'";'
+				elif gene_name == "NA": # If gene_name is not assigned
+					EXON_ATTR = 'gene_id "'+gene_id+'"; '+'transcript_id "'+transcript_id+'"; '+'gene_source "'+gene_source+'"; '+'gene_biotype "'+gene_biotype+'"; '+'transcript_source "'+transcript_source+'"; '+'transcript_biotype "'+transcript_biotype+'"; '+'exon_id "'+exon_id+'";'
+				outfile.write('\t'.join([CHROM,ANNO,'exon',START,END,SCORE,STRAND,FRAME,EXON_ATTR])+'\n')
+				if gene_name != "NA": # If gene_name is assigned
+					CDS_ATTR = 'gene_id "'+gene_id+'"; '+'transcript_id "'+transcript_id+'"; '+'gene_name "'+gene_name+'"; '+'gene_source "'+gene_source+'"; '+'gene_biotype "'+gene_biotype+'"; '+'transcript_source "'+transcript_source+'"; '+'transcript_biotype "'+transcript_biotype+'"; '+'protein_id "'+protein_id+'";'
+				elif gene_name == "NA": # If gene_name is not assigned
+					CDS_ATTR = 'gene_id "'+gene_id+'"; '+'transcript_id "'+transcript_id+'"; '+'gene_source "'+gene_source+'"; '+'gene_biotype "'+gene_biotype+'"; '+'transcript_source "'+transcript_source+'"; '+'transcript_biotype "'+transcript_biotype+'"; '+'protein_id "'+protein_id+'";'
+				outfile.write('\t'.join([CHROM,ANNO,FEATURE,START,END,SCORE,STRAND,FRAME,CDS_ATTR])+'\n')
+				# Create another file with gene_id and gene description
+				gene_table.write('\t'.join([gene_id,product])+'\n')
+gene_table.close()
+outfile.close()
+######################################################
+
+# Combine the chicken reference genome with the MDV reference genome
+cat \
+./data/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel.fa \
+./data/gallid_herpesvirus_2_genomic.fa \
+> ./data/Gallus_gallus_5.0-ensembl_gallid_herpesvirus_2-refseq_genomic_combo.fa
+# Combine the chicken reference genome gtf file with the MDV reference genome gtf file
+(grep -h "^#" ./data/Gallus_gallus.Gallus_gallus-5.0.92.gtf ./data/gallid_herpesvirus_2_genomic_exon_adjusted.gtf;
+grep -h -v "^#" ./data/Gallus_gallus.Gallus_gallus-5.0.92.gtf ./data/gallid_herpesvirus_2_genomic_exon_adjusted.gtf) \
+> ./data/Gallus_gallus_5.0-ensembl_gallid_herpesvirus_2-refseq_genomic_combo.gtf
+
+### Map reads with STAR
+# https://github.com/alexdobin/STAR/blob/master/doc/STARmanual.pdf
+# Generate the genome index
+qsub ./scripts/STAR_genenerate_genome.sh
+
+# ./scripts/STAR_genenerate_genome.sh
+#########################################################
+#!/bin/bash -login
+#PBS -l nodes=1:ppn=1,walltime=00:03:59:00,mem=40gb
+#PBS -j oe
+
+# working directory:
+cd /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE/chicken_MDV_genome
+
+# Load modules
+module load STAR/2.5.1b
+
+#sjdbOverhang should be mate length - 1, we will use default parameter of 100
+
+# Generate the genome index
+STAR \
+--runMode genomeGenerate \
+--runThreadN 4 \
+--genomeDir ./data/chicken_mdv_genome \
+--genomeFastaFiles ./data/Gallus_gallus_5.0-ensembl_gallid_herpesvirus_2-refseq_genomic_combo.fa \
+--sjdbGTFfile ./data/Gallus_gallus_5.0-ensembl_gallid_herpesvirus_2-refseq_genomic_combo.gtf \
+--sjdbOverhang 100
+
+qstat -f ${PBS_JOBID}
+##########################################################
+# ./Log.out file for stats
+
+# Unfortunetely, STAR will not run if there is a space after read names. Our files have such a space so
+# I will have to remove these spaces... ugh.
+find ../data/*/ -name '*_L00[1-8]_R[1-2]_paired_norRNA.fastq.gz' | \
+xargs -i echo 'qsub ./scripts/alter_fastq_file.sh -v Var='{} |sh
+
+# ./scripts/alter_fastq_file.sh
+##################################
+#!/bin/bash -login
+#PBS -l nodes=1:ppn=1,walltime=00:00:59:00,mem=5gb
+#PBS -j oe
+
+# working directory:
+cd /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE/chicken_MDV_genome
+
+outfile=`basename ${Var} | sed 's/.gz//g'`
+
+gunzip -c ${Var}> ./data/fastq/${outfile}
+##################################
+
+# Determine if the RNASeq data is stranded 
+# Resources: 
+# Sequencing library was strand specific: https://www.nugen.com/products/ovation-solo-rna-seq-system
+# https://www.youtube.com/watch?v=r_jAYWaPvQk&feature=youtu.be (minute 5)
+# https://www.biostars.org/p/113679/
+# http://ccb.jhu.edu/software/tophat/faq.shtml#library_type
+# http://onetipperday.sterding.com/2012/07/how-to-tell-which-library-type-to-use.html
+# https://chipster.csc.fi/manual/library-type-summary.html (suggests NuGEN SoLo is Directional, 2nd Strand)
+# https://ccb.jhu.edu/software/tophat/manual.shtml
+# http://rseqc.sourceforge.net/#infer-experiment-py
+
+# Determine strandedness of RNASeq data
+# Based on this advice: http://ccb.jhu.edu/software/tophat/faq.shtml#library_type
+
+# Create a subset of files with 1 million reads
+zcat ./data/017733/017733_L005_R1_paired_norRNA.fastq.gz | head -n 4000000 > ./data/stranded_test/017733_L005_R1_paired_norRNA_1M.fastq
+zcat ./data/017733/017733_L005_R2_paired_norRNA.fastq.gz | head -n 4000000 > ./data/stranded_test/017733_L005_R2_paired_norRNA_1M.fastq
+zcat ./data/017733/017733_L006_R1_paired_norRNA.fastq.gz | head -n 4000000 > ./data/stranded_test/017733_L006_R1_paired_norRNA_1M.fastq
+zcat ./data/017733/017733_L006_R2_paired_norRNA.fastq.gz | head -n 4000000 > ./data/stranded_test/017733_L006_R2_paired_norRNA_1M.fastq
+
+qsub ./scripts/stranded_mapping.sh
+
+# ./scripts/stranded_mapping.sh
+#####################################################
+#!/bin/bash -login
+#PBS -l nodes=1:ppn=4,walltime=00:03:00:00,mem=30gb
+#PBS -j oe
+
+# working directory:
+cd /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE
+
+# Map the reads to a reference genome
+module load Python/2.7.2
+module load TopHat/2.1.0
+module load bowtie2/2.2.6
+
+tophat \
+-p 4 \
+--library-type fr-unstranded \
+--transcriptome-index=./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/cdna/Gallus_gallus.Gallus_gallus-5.0.cdna.all \
+-o ./data/unstranded \
+./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel \
+./data/stranded_test/017733_L005_R1_paired_norRNA_1M.fastq,./data/stranded_test/017733_L006_R1_paired_norRNA_1M.fastq \
+./data/stranded_test/017733_L005_R2_paired_norRNA_1M.fastq,./data/stranded_test/017733_L006_R2_paired_norRNA_1M.fastq
+
+tophat \
+-p 4 \
+--library-type fr-firststrand \
+--transcriptome-index=./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/cdna/Gallus_gallus.Gallus_gallus-5.0.cdna.all \
+-o ./data/firststrand \
+./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel \
+./data/stranded_test/017733_L005_R1_paired_norRNA_1M.fastq,./data/stranded_test/017733_L006_R1_paired_norRNA_1M.fastq \
+./data/stranded_test/017733_L005_R2_paired_norRNA_1M.fastq,./data/stranded_test/017733_L006_R2_paired_norRNA_1M.fastq
+
+tophat \
+-p 4 \
+--library-type fr-secondstrand \
+--transcriptome-index=./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/cdna/Gallus_gallus.Gallus_gallus-5.0.cdna.all \
+-o ./data/secondstrand \
+./data/ref/ensembl/pub/release-92/fasta/gallus_gallus/dna/Gallus_gallus.Gallus_gallus-5.0.dna.toplevel \
+./data/stranded_test/017733_L005_R1_paired_norRNA_1M.fastq,./data/stranded_test/017733_L006_R1_paired_norRNA_1M.fastq \
+./data/stranded_test/017733_L005_R2_paired_norRNA_1M.fastq,./data/stranded_test/017733_L006_R2_paired_norRNA_1M.fastq
+
+qstat -f ${PBS_JOBID}
+#####################################################
+
+# We will use another tool to test the strandedness
+
+cd /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE/chicken_MDV_genome
+# Convert the chicken reference gtf file to bed format
+python3 ./scripts/ensembl_gtf2bed.py \
+./data/Gallus_gallus.Gallus_gallus-5.0.92.gtf \
+./data/Gallus_gallus.Gallus_gallus-5.0.92.bed
+
+# ./scripts/ensembl_gtf2bed.py
+#####################################################
+import sys
+import os
+
+# in-N-out
+infile = sys.argv[1]
+outfile = open(sys.argv[2], 'w')
+
+# Iterate through the gtf file, grab appropriate fields, adjust as necessary, and write bed file, close file
+for line in open(infile):
+	if not line.startswith('#'):
+		col = line.rstrip().split("\t")
+		CHROM = col[0]
+		FEATURE = col[2]
+		START = str(int(col[3]) - 1)
+		END = str(int(col[4]) - 1)
+		SCORE = col[5]
+		STRAND = col[6]
+		INFO = col[8]
+		if FEATURE == 'gene':
+			ENSEMBL_GENE_ID = INFO.split('";')[0].split('gene_id "')[1]
+			outfile.write('\t'.join([CHROM,START,END,ENSEMBL_GENE_ID,SCORE,STRAND])+'\n')
+outfile.close()
+#####################################################
+
+head ./data/Gallus_gallus.Gallus_gallus-5.0.92.bed
+1	29	2664	ENSGALG00000045540	.	+
+1	9911	14698	ENSGALG00000031626	.	-
+1	20934	25757	ENSGALG00000038274	.	-
+1	34199	67145	ENSGALG00000041494	.	+
+1	70096	82101	ENSGALG00000039682	.	+
+1	95032	98697	ENSGALG00000038044	.	-
+1	98750	102695	ENSGALG00000032458	.	+
+1	103809	125278	ENSGALG00000034366	.	-
+1	106220	121694	ENSGALG00000035824	.	-
+1	155623	364583	ENSGALG00000033919	.	+
+awk ' $3 == "gene" { print $0 } ' ./data/Gallus_gallus.Gallus_gallus-5.0.92.gtf | head
+1	ensembl	gene	30	2665	.	+	.	gene_id "ENSGALG00000045540"; gene_version "1"; gene_source "ensembl"; gene_biotype "protein_coding";
+1	ensembl	gene	9912	14699	.	-	.	gene_id "ENSGALG00000031626"; gene_version "2"; gene_source "ensembl"; gene_biotype "protein_coding";
+1	ensembl	gene	20935	25758	.	-	.	gene_id "ENSGALG00000038274"; gene_version "2"; gene_source "ensembl"; gene_biotype "protein_coding";
+1	ensembl	gene	34200	67146	.	+	.	gene_id "ENSGALG00000041494"; gene_version "1"; gene_name "GOLGB1"; gene_source "ensembl"; gene_biotype "protein_coding";
+1	ensembl	gene	70097	82102	.	+	.	gene_id "ENSGALG00000039682"; gene_version "1"; gene_name "HCLS1"; gene_source "ensembl"; gene_biotype "protein_coding";
+1	ensembl	gene	95033	98698	.	-	.	gene_id "ENSGALG00000038044"; gene_version "1"; gene_source "ensembl"; gene_biotype "protein_coding";
+1	ensembl	gene	98751	102696	.	+	.	gene_id "ENSGALG00000032458"; gene_version "1"; gene_name "RABL2L"; gene_source "ensembl"; gene_biotype "protein_coding";
+1	ensembl	gene	103810	125279	.	-	.	gene_id "ENSGALG00000034366"; gene_version "1"; gene_name "ACR"; gene_source "ensembl"; gene_biotype "protein_coding";
+1	ensembl	gene	106221	121695	.	-	.	gene_id "ENSGALG00000035824"; gene_version "1"; gene_name "ARSA"; gene_source "ensembl"; gene_biotype "protein_coding";
+1	ensembl	gene	155624	364584	.	+	.	gene_id "ENSGALG00000033919"; gene_version "1"; gene_source "ensembl"; gene_biotype "protein_coding";
+
+# Determine if the reads are strand specific with RSeqQC v2.4
+python2.7 /mnt/home/steepale/Apps/RSeQC-2.6.4/scripts/infer_experiment.py \
+-r ./data/Gallus_gallus.Gallus_gallus-5.0.92.bed \
+-i ../data/017733/017733_paired_norRNA_sorted.bam
+
+# Output:
+#This is PairEnd Data
+#Fraction of reads failed to determine: 0.0143
+#Fraction of reads explained by "1++,1--,2+-,2-+": 0.9665
+#Fraction of reads explained by "1+-,1-+,2++,2--": 0.0192
+
+find ./data/fastq/ -name '*_L00[1-8]_R[1-2]_paired_norRNA.fastq' |\
+xargs -i basename {} | \
+sed 's/_L00[1-8]_R[1-2]_paired_norRNA.fastq//' |
+sort | uniq | grep "017798-1_1" | \
+xargs -i echo 'qsub ./scripts/star_map_mdv.sh -v Var='{} |sh
+
+# ./scripts/star_map_mdv.sh
+##################################
+#!/bin/bash -login
+#PBS -l nodes=1:ppn=4,walltime=01:00:00:00,mem=40gb
+#PBS -j oe
+
+# Working directory
+wddir="/mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE/chicken_MDV_genome"
+cd ${wddir}
+
+mkdir ./data/STAR/${Var}
+cd ./data/STAR/${Var}
+
+# Load the aligner
+module load STAR/2.5.1b
+
+# Need to map by certain paired lanes (1&2, 3&4, 5&6, 7) based on how samples were organized during sequencing run
+#1&2
+find ${wddir}/data/fastq/ -name "${Var}_L00[1-2]_R[1-2]_paired_norRNA.fastq" | \
+xargs -i basename {} | \
+sed "s/_L00[1-8]_R[1-2]_paired_norRNA.fastq//" | \
+sort | uniq | \
+xargs -i sh -c \
+"STAR --runThreadN 4 \
+--genomeDir ${wddir}/data/chicken_mdv_genome \
+--readFilesIn \
+${wddir}/data/fastq/{}_L001_R1_paired_norRNA.fastq,${wddir}/data/fastq/{}_L002_R1_paired_norRNA.fastq \
+${wddir}/data/fastq/{}_L001_R2_paired_norRNA.fastq,${wddir}/data/fastq/{}_L002_R2_paired_norRNA.fastq"
+
+#3&4
+find ${wddir}/data/fastq/ -name "${Var}_L00[3-4]_R[1-2]_paired_norRNA.fastq" | \
+xargs -i basename {} | \
+sed "s/_L00[1-8]_R[1-2]_paired_norRNA.fastq//" | \
+sort | uniq | \
+xargs -i sh -c \
+"STAR --runThreadN 4 \
+--genomeDir ${wddir}/data/chicken_mdv_genome \
+--readFilesIn \
+${wddir}/data/fastq/{}_L003_R1_paired_norRNA.fastq,${wddir}/data/fastq/{}_L004_R1_paired_norRNA.fastq \
+${wddir}/data/fastq/{}_L003_R2_paired_norRNA.fastq,${wddir}/data/fastq/{}_L004_R2_paired_norRNA.fastq"
+
+#5&6
+find ${wddir}/data/fastq/ -name "${Var}_L00[5-6]_R[1-2]_paired_norRNA.fastq" | \
+xargs -i basename {} | \
+sed "s/_L00[1-8]_R[1-2]_paired_norRNA.fastq//" | \
+sort | uniq | \
+xargs -i sh -c \
+"STAR --runThreadN 4 \
+--genomeDir ${wddir}/data/chicken_mdv_genome \
+--readFilesIn \
+${wddir}/data/fastq/{}_L005_R1_paired_norRNA.fastq,${wddir}/data/fastq/{}_L006_R1_paired_norRNA.fastq \
+${wddir}/data/fastq/{}_L005_R2_paired_norRNA.fastq,${wddir}/data/fastq/{}_L006_R2_paired_norRNA.fastq"
+
+#7
+find ${wddir}/data/fastq/ -name "${Var}_L007_R[1-2]_paired_norRNA.fastq" | \
+xargs -i basename {} | \
+sed "s/_L00[1-8]_R[1-2]_paired_norRNA.fastq//" | \
+sort | uniq | \
+xargs -i sh -c \
+"STAR --runThreadN 4 \
+--genomeDir ${wddir}/data/chicken_mdv_genome \
+--readFilesIn \
+${wddir}/data/fastq/{}_L007_R1_paired_norRNA.fastq \
+${wddir}/data/fastq/{}_L007_R2_paired_norRNA.fastq"
+
+# Change back to working directory
+cd ${wddir}
+
+# Load samtools
+module load SAMTools/1.5
+
+# Sort the BAMs with Samtools
+samtools view -bS ./data/STAR/${Var}/Aligned.out.sam > ./data/bams/${Var}_name_sorted_chicken_mdv_genome_int.bam
+samtools sort -n \
+./data/bams/${Var}_name_sorted_chicken_mdv_genome_int.bam \
+-o ./data/bams/${Var}_name_sorted_chicken_mdv_genome.bam
+
+# Count the mapped RNA read coverage on respective genes
+module load PySAM/0.6
+module load HTSeq/0.6.1
+
+# Count reads with htseq
+htseq-count --format=bam \
+--stranded=yes \
+--order=name \
+--type=exon \
+--idattr=gene_id \
+--minaqual=10 \
+./data/bams/${Var}_name_sorted_chicken_mdv_genome.bam \
+./data/Gallus_gallus_5.0-ensembl_gallid_herpesvirus_2-refseq_genomic_combo.gtf \
+> ./data/gene_counts/${Var}_chicken_mdv_genome_gene_counts.txt
+
+qstat -f ${PBS_JOBID}
+##################################
+
+# Seperately create samtools position sorted and indexed bam files for vizualization in IGV
+for bam in `find ./data/bams/ -name '*_name_sorted_chicken_mdv_genome.bam' | sort | uniq|  grep -v -e "017798-1_1" -e "017798-1_1" -e "017911-1_1"`
+do
+sam=`basename ${bam} | sed 's/_name_sorted_chicken_mdv_genome.bam//'`
+echo ${sam}
+# Submit the job
+sbatch ./scripts/sort_index.slurm ${sam}
+done
+
+# ./scripts/sort_index.slurm
+#################################################################
+#!/bin/bash
+#SBATCH --time=4:00:00
+#SBATCH --mem=50000M
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --account=general
+#SBATCH --partition=general-short-18
+#SBATCH -o sort index-%j
+
+# SET UP ENVIRONMENT
+# Assign variables
+sam=$1
+#qstats='/mnt/home/steepale/Apps/otherqstats/bin/qstats'
+
+# Purge modules
+module purge
+# Load modules
+module load Java/1.8.0_31
+module load SAMtools/1.9
+
+# Chnage to proper environment
+cd /mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE/chicken_MDV_genome
+
+# Perform tasks 
+# Sort the BAMs by position with samtools
+samtools sort \
+-m 40G \
+./data/bams/${sam}_name_sorted_chicken_mdv_genome.bam \
+-o ./data/bams/${sam}_position_sorted_chicken_mdv_genome.bam
+
+samtools index ./data/bams/${sam}_position_sorted_chicken_mdv_genome.bam
+
+#################################################################
+
+
+
+# Transfer all the gene counts and MDV gtf file to MacBook pro for work in R Studio
+rsync -av --progress \
+steepale@rsync.hpcc.msu.edu:/mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE/chicken_MDV_genome/data/gene_counts/*_chicken_mdv_genome_gene_counts.txt \
+./data/gene_counts/
+rsync -av --progress \
+steepale@rsync.hpcc.msu.edu:/mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE/chicken_MDV_genome/data/gallid_herpesvirus_2_genomic_exon_adjusted.gtf \
+./data/
+rsync -av --progress \
+steepale@rsync.hpcc.msu.edu:/mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE/chicken_MDV_genome/data/gallid_herpesvirus_2_genomic.gff3 \
+./data/
+rsync -av --progress \
+steepale@rsync.hpcc.msu.edu:/mnt/research/ADOL/OutsideCollaborations/20160201_Cheng_Steep_Xu_Zhang/RNA_DE/chicken_MDV_genome/data/gallid_herpesvirus_2_gene_table.txt
+./data/
+
+### Launch a shiny app that allows for MDV gene specific clustering and heatmap analysis.
+mkdir shiny-mdv_express_clust_heat
+cd shiny-mdv_express_clust_heat/
+
+# Copy gene count files
+mkdir data
+mkdir data/gene_counts
+cp /Users/Alec/Documents/Bioinformatics/MDV_Project/rna_gene_expression_analysis/chicken_MDV_genome/data/gene_counts/* \
+./data/gene_counts/
+# Copy viral gene table annotation
+cp /Users/Alec/Documents/Bioinformatics/MDV_Project/rna_gene_expression_analysis/chicken_MDV_genome/data/gallid_herpesvirus_2_gene_table.txt \
+./data/gallid_herpesvirus_2_gene_table.txt
+
+# ./shiny-mdv_express_clust_heat/app.R
+####################################
+
+
+
+
+
+
+

@@ -8,10 +8,10 @@ Sample/sequencing-run config file: `config.txt`
 Perl script to run pipeline: `fastq2bam.pl`  
 Script to submit jobs to cluster environment: `submit.pl`
 
-## Genomic datasets: 
--[2011_wgs_lines67-parental](https://github.com/steepale/IKZF1_paper_code/tree/master/00_genomic_datasets/2011_wgs_lines67-parental)
--[2014_wgs_6x7-F1](https://github.com/steepale/IKZF1_paper_code/tree/master/00_genomic_datasets/2014_wgs_6x7-F1)
--[2015_wgs_tumor-normal-gonad](https://github.com/steepale/IKZF1_paper_code/tree/master/00_genomic_datasets/2015_wgs_tumor-normal-gonad)
+## Genomic datasets:
+*[2011_wgs_lines67-parental](https://github.com/steepale/IKZF1_paper_code/tree/master/00_genomic_datasets/2011_wgs_lines67-parental)
+*[2014_wgs_6x7-F1](https://github.com/steepale/IKZF1_paper_code/tree/master/00_genomic_datasets/2014_wgs_6x7-F1)
+*[2015_wgs_tumor-normal-gonad](https://github.com/steepale/IKZF1_paper_code/tree/master/00_genomic_datasets/2015_wgs_tumor-normal-gonad)
 
 
 Analysis was inspired by the Genome Analysis Toolkit (GATK) best practices pipeline.

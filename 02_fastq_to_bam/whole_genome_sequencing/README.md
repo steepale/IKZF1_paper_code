@@ -6,6 +6,7 @@ Reads were inspected for quantity and quality before and after trimming with Fas
 ## Data files:
 - Sample/sequencing-run config file: `config.txt`  
 - Perl script to run pipeline: `fastq2bam.pl`  
+- Python(ic) script for improved pipeline (not used in IKZF1 paper) `fastq2bam_main_documentation.txt`
 - Script to submit jobs to cluster environment: `submit.pl`
 
 ## Genomic datasets:

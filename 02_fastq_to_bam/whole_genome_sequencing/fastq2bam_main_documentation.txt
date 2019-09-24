@@ -1,0 +1,497 @@
+#===============================================================================
+#
+#         FILE: /home/proj/MDW_genomics/fastq2bam/scripts/fastq2bam_main_documentation.txt
+#
+#        USAGE: for documentation purposes, scripts inside
+#
+#  DESCRIPTION: This script serves as a step by step documentation script for preprocessing
+#				and mapping raw reads.
+#                
+# REQUIREMENTS: ---
+#        NOTES: ---
+#       AUTHOR: Alec Steep, Hongen Xu
+# 	   CONTACT: alec.steep@gmail.com
+#				
+#  AFFILIATION: Michigan State University (MSU), East Lansing, MI, United States
+#				         USDA ARS Avian Disease and Oncology Lab (ADOL), East Lansing, MI, United States
+#				         Technical University of Munich (TUM), Weihenstephan, Germany
+#      VERSION: 1.0
+#      CREATED: 2017.05.12
+#     REVISION:  
+#===============================================================================
+
+# Permanent PROJECT DIRECTORY (TUM Cluster)
+cd /home/proj/MDW_genomics/fastq2bam
+
+### Just for development purposes, will be adjusted in revision (DANGER, could erase data if not backed up elsewhere)
+# Extract a small subset of reads
+# Each read corresponds to 4 lines
+#time for file in `ls /home/proj/MDW_genomics/MSU_HPCC_Research/DNA_Seq/Fastq_All_Samples/ | grep "738"`
+#do
+#out_file=`echo './data/fastq_all_samples/'$file | sed 's/.fastq.gz/.fastq/'`
+#bgzip -d -c '/home/proj/MDW_genomics/MSU_HPCC_Research/DNA_Seq/Fastq_All_Samples/'$file | \
+#head -n 100 > $out_file
+#bgzip -f $out_file
+#done
+
+# Create a config file with fields of sample identifiers
+cd /home/proj/MDW_genomics/fastq2bam
+
+# Header
+printf "#sample_id\tbarcode\tlane\tread\tsuffix\tsample_label\tsample_type\n" > ./data/config.txt
+# Body
+ls -1 ./data/fastq_all_samples/*.fastq.gz | \
+xargs -i basename {} | \
+sed "s/_/\t/g" >> ./data/config.txt
+# manual adjustment 
+vi ./data/config.txt
+
+# Perform read trimming (low qual and adapters), fastqc analysis, mapping, deduping, and realignment.
+# Submit all the runs with python submit script:
+
+# Adjust a dbsnp vcf file. Spaces appear in gene names of INFO field and causes gatk to error. Replace spaces with underscore.
+#sed '19939932q;d' /home/users/a.steep/databases/dbsnp/snp/organisms/chicken_9031/VCF/all_reformat.vcf
+
+python ./scripts/adjust_dbsnp_file.py \
+/home/users/a.steep/databases/dbsnp/snp/organisms/chicken_9031/VCF/all.vcf \
+/home/users/a.steep/databases/dbsnp/snp/organisms/chicken_9031/VCF/all_reformat.vcf
+
+# ./scripts/adjust_dbsnp_file.py
+#################################
+import sys
+import os
+import re
+
+infile = sys.argv[1]
+
+outfile = open(sys.argv[2], 'w')
+
+for line in open(infile):
+	if line[0] == '#':
+		outfile.write(line)
+	if line[0] != '#':
+		line = line.rstrip()
+		col = line.split('\t')
+		ref = col[3]
+		alt = col[4]
+		info = col[7]
+		if re.search('-', ref):
+			ref = 'N'
+		if re.search('-', alt):
+			alt = 'N'
+		if re.search(' ', info):
+			info = info.replace(' ', '_') 
+		outfile.write(col[0]+'\t'+col[1]+'\t'+col[2]+'\t'+ref+'\t'+alt+'\t'+col[5]+'\t'+col[6]+'\t'+info+'\n')
+outfile.close()
+#################################
+
+# Sort the dbsnp file, for some reason it is not sorted perfectly
+java -jar /home/users/a.steep/Apps/picard/build/libs/picard.jar SortVcf \
+I=/home/users/a.steep/databases/dbsnp/snp/organisms/chicken_9031/VCF/all_reformat.vcf \
+O=/home/users/a.steep/databases/dbsnp/snp/organisms/chicken_9031/VCF/all_sorted.vcf \
+SEQUENCE_DICTIONARY=/home/proj/MDW_genomics/Galgal5/genome.dict
+# Remove the index of output file or else GATK will error
+rm /home/users/a.steep/databases/dbsnp/snp/organisms/chicken_9031/VCF/all_sorted.vcf.idx
+
+# Sumbit all the sequenced samples from summer 2014
+
+for sample in `cat /home/users/a.steep/databases/samples/all_samples_dnaseq_2014_017NNN-N.txt`
+do
+sh ./scripts/fastq2bam_wrapper.sh \
+$sample
+done
+
+# ./scripts/fastq2bam_wrapper.sh
+#####################################
+#!/usr/bin/bash
+
+cd /home/proj/MDW_genomics/fastq2bam
+
+sample=$1
+# Submit job to cluster
+qsub -b y -l vf=100G,core=1 -q all.q -N "fastq2bam_"$sample "python3 /home/proj/MDW_genomics/fastq2bam/scripts/fastq2bam.py $sample"
+
+#####################################
+
+# ./scripts/fastq2bam.py
+################################################
+#!/usr/bin/python3
+import sys
+import os
+import re
+
+# Change to proper directory
+os.chdir('/home/proj/MDW_genomics/fastq2bam')
+
+# input sample
+in_sample = sys.argv[1]
+
+# reference files
+config_file = "./data/config.txt"
+trim_adaptor_file = '/home/users/a.steep/Apps/Trimmomatic-0.36/adapters/TruSeq2-PE.fa'
+galgal5_ref = '/home/proj/MDW_genomics/galgal5/galgal5.fa'
+galgal5_ref_index = '/home/proj/MDW_genomics/galgal5/galgal5.fa.fai'
+galgal5_ref_dict = galgal5_ref.replace('.fa', '.dict') 
+dbsnp = '/home/users/a.steep/databases/dbsnp/snp/organisms/chicken_9031/VCF/all_sorted.vcf'
+
+# reference directories
+
+# Program files
+fastqc = '/home/users/a.steep/Apps/FastQC/fastqc'
+trimmomatic = '/home/users/a.steep/Apps/Trimmomatic-0.36/trimmomatic-0.36.jar'
+sickle = '/home/users/a.steep/Apps/sickle/sickle'
+bwa = '/home/users/a.steep/Apps/bwa/bwa'
+samtools = '/home/users/a.steep/Apps/samtools/samtools'
+picard = '/home/users/a.steep/Apps/picard/build/libs/picard-2.9.2-4-gb4a02aa-SNAPSHOT-all.jar'
+gatk = '/home/users/a.steep/Apps/gatk/GenomeAnalysisTK.jar'
+
+# Iterate through the config file and grab appropriate sample identifiers and place in dictionary data structure
+sample2ids = {}
+sample2lanes = {}
+read_set = set(['R1', 'R2'])
+# Iterate through config file and fill dictionaries
+for line in open(config_file):
+	if line[0] != '#':
+		line = line.rstrip()
+		col = line.split('\t')
+		sample_id = col[0]
+		barcode = col[1]
+		lane = col[2]
+		read = col[3]
+		suffix = col[4]
+		sample_label = col[5]
+		sample_type = col[6]
+		if sample_id not in sample2ids.keys():
+			sample2ids[sample_id] = [barcode, suffix, sample_label, sample_type]
+		if sample_id not in sample2lanes.keys():
+			sample2lanes[sample_id] = set()
+			sample2lanes[sample_id].add(lane)
+		elif sample_id in sample2lanes.keys():
+			sample2lanes[sample_id].add(lane)
+
+# Convert the set of lanes to a list
+sample2lanes[in_sample] = list(sample2lanes[in_sample])
+# Create empty set of bams files for each lane to be filled in for loop
+bams_per_lane_set = set()
+
+### Run a fastqc analysis before preprocessing to assess read quality and adaptor contamination
+for lane in sample2lanes[in_sample]:
+	barcode = sample2ids[in_sample][0]
+	suffix = sample2ids[in_sample][1]
+	sample_type = sample2ids[in_sample][3]
+	r1_file = './data/fastq_all_samples/'+in_sample+'_'+barcode+'_'+lane+'_'+'R1'+'_'+suffix
+	r2_file = './data/fastq_all_samples/'+in_sample+'_'+barcode+'_'+lane+'_'+'R2'+'_'+suffix
+	out_dir = './analysis/fastqc_before_trim/'
+	# Check if output directory exists, if not create it
+	if not os.path.exists(out_dir):
+		os.makedirs(out_dir)
+	# Run FastQC command
+	fastqc_cmd = 'fastqc -o'+' '+out_dir+' '+r1_file+' '+r2_file
+	print('### Run a fastqc analysis before preprocessing to assess read quality and adaptor contamination')
+	os.system(fastqc_cmd)
+
+	### Trim off adaptor sequences with trimmomatic and low quality reads
+	trimm_r1_paired_file = './data/trimmomatic/'+in_sample+'_'+barcode+'_'+lane+'_'+'R1'+'_'+'paired_trimmomatic.fastq.gz'
+	trimm_r2_paired_file = './data/trimmomatic/'+in_sample+'_'+barcode+'_'+lane+'_'+'R2'+'_'+'paired_trimmomatic.fastq.gz'
+	trimm_r1_unpaired_file = './data/trimmomatic/'+in_sample+'_'+barcode+'_'+lane+'_'+'R1'+'_'+'unpaired_trimmomatic.fastq.gz'
+	trimm_r2_unpaired_file = './data/trimmomatic/'+in_sample+'_'+barcode+'_'+lane+'_'+'R2'+'_'+'unpaired_trimmomatic.fastq.gz'
+	out_dir = './data/trimmomatic/'
+	# Check if output directory exists, if not create it
+	if not os.path.exists(out_dir):
+		os.makedirs(out_dir)
+	# Run command
+	trimmomatic_cmd = 'java -jar'+' '+trimmomatic+' '+'PE -threads 4'+' '+ \
+	r1_file+' '+r2_file+' '+ \
+	trimm_r1_paired_file+' '+trimm_r1_unpaired_file+' '+ \
+	trimm_r2_paired_file+' '+trimm_r2_unpaired_file+' '+ \
+	'ILLUMINACLIP:'+trim_adaptor_file+':2:30:10 HEADCROP:9'
+	print('### Trim off adaptor sequences with trimmomatic and low quality reads')
+	os.system(trimmomatic_cmd)
+
+	### Perform a FastQC analysis after adapter trimming
+	out_dir = './analysis/fastqc_post_trimmomatic/'
+	# Check if output directory exists, if not create it
+	if not os.path.exists(out_dir):
+		os.makedirs(out_dir)
+	# Run command
+	fastqc_cmd = 'fastqc -o'+' '+out_dir+' '+\
+	trimm_r1_paired_file+' '+trimm_r2_paired_file+' '+\
+	trimm_r1_unpaired_file+' '+trimm_r2_unpaired_file
+	print('### Perform a FastQC analysis after adapter trimming')
+	os.system(fastqc_cmd)
+
+	### Trim off remaining low quality reads with sickle
+	sickle_r1_paired_file = './data/sickle/'+in_sample+'_'+barcode+'_'+lane+'_'+'R1'+'_'+'paired_sickle.fastq.gz'
+	sickle_r2_paired_file = './data/sickle/'+in_sample+'_'+barcode+'_'+lane+'_'+'R2'+'_'+'paired_sickle.fastq.gz'
+	sickle_singles_pe_file = './data/sickle/'+in_sample+'_'+barcode+'_'+lane+'_'+'singles_pe_sickle.fastq.gz'
+	sickle_singles_se_file = './data/sickle/'+in_sample+'_'+barcode+'_'+lane+'_'+'singles_se_sickle.fastq.gz'
+	out_dir = './data/sickle/'
+	# Check if output directory exists, if not create it
+	if not os.path.exists(out_dir):
+		os.makedirs(out_dir)
+	# Run command
+	sickle_pe_cmd = 'sickle pe -f '+trimm_r1_paired_file+' -r '+trimm_r2_paired_file+\
+	' -t sanger -o '+sickle_r1_paired_file+' -p '+sickle_r2_paired_file+\
+	' -s '+sickle_singles_pe_file+' -q 20 -l 50 -g'
+	sickle_se_cmd = 'sickle se -f '+trimm_r1_unpaired_file+\
+	' -t sanger -o '+sickle_singles_se_file+' -q 30 -l 50 -g'
+	print('### Trim off remaining low quality reads with sickle')
+	os.system(sickle_pe_cmd)
+	os.system(sickle_se_cmd)
+
+	### Perform FastQC post read quality trim via sickle
+	out_dir = './analysis/fastqc_post_sickle/'
+	# Check if output directory exists, if not create it
+	if not os.path.exists(out_dir):
+		os.makedirs(out_dir)
+	# Run command
+	fastqc_cmd = 'fastqc -o'+' '+out_dir+' '+\
+	sickle_r1_paired_file+' '+sickle_r2_paired_file+' '+\
+	sickle_singles_pe_file+' '+sickle_singles_se_file
+	print('### Perform FastQC post read quality trim via sickle')
+	os.system(fastqc_cmd)
+
+	### Read mapping and alignment with bwa
+	out_dir = './data/bwa/'
+	bwa_sam = './data/bwa/'+in_sample+'_'+lane+'_bwa_nrg_yet.sam'
+	# Check if output directory exists, if not create it
+	if not os.path.exists(out_dir):
+		os.makedirs(out_dir)
+	# Check if reference is indexed
+	if not os.path.exists(galgal5_ref_index):
+		idx_cmd = samtools+' faidx '+galgal5_ref
+		os.system(idx_cmd)
+	# Run command
+	# Reminder: May want ot use -M command to make compatible with picard tools
+	bwa_cmd = bwa+' mem -t 4 -T 30 '+galgal5_ref+' '+\
+	sickle_r1_paired_file+' '+sickle_r2_paired_file+' > '+bwa_sam
+	print('### Read mapping and alignment with bwa')
+	os.system(bwa_cmd)
+
+	### Remove trimmed reads
+	os.remove(trimm_r1_paired_file)
+	os.remove(trimm_r2_paired_file)
+	os.remove(trimm_r1_unpaired_file)
+	os.remove(trimm_r2_unpaired_file)
+
+	###Add ReadGroups using picard
+	out_dir = './data/post_alignment/'
+	pic_sam_by_lane = './data/post_alignment/'+in_sample+'_'+lane+'_bwa_readgroups.sam'
+	rgid = in_sample+'_'+lane
+	rgpl = "ILLUMINA"
+	rgpu = barcode+'_'+lane
+	rgsm = in_sample
+	rglb = sample_type
+	# Check if output directory exists, if not create it
+	if not os.path.exists(out_dir):
+		os.makedirs(out_dir)
+	# Run the command
+	pic_cmd = 'java -Xmx40g -jar '+picard+' AddOrReplaceReadGroups INPUT='+bwa_sam+' OUTPUT='+pic_sam_by_lane+' RGID='+rgid+' RGPL='+rgpl+' RGPU='+rgpu+' RGSM='+rgsm+' RGLB='+rglb
+	print('###Add readgroups using picard')
+	os.system(pic_cmd)
+	# Remove sam file
+	os.remove(bwa_sam)
+
+	### Sort the sam file
+	rg_bam_by_lane = './data/post_alignment/'+in_sample+'_'+lane+'_bwa_readgroups.bam'
+	sort_cmd = 'java -Xmx40g -jar '+picard+' SortSam INPUT='+pic_sam_by_lane+' OUTPUT='+rg_bam_by_lane+' SORT_ORDER=coordinate'
+	print('### Sort the sam file')
+	os.system(sort_cmd)
+	# Remove read group sam
+	os.remove(pic_sam_by_lane)
+
+	### Mark duplicates within the bam file
+	marked_bam_by_lane = './data/post_alignment/'+in_sample+'_'+lane+'_bwa_marked.bam'
+	metrics_by_lane = './data/post_alignment/'+in_sample+'_'+lane+'_dedup_by_lane_metrics.list'
+	dupes_cmd = 'java -Xmx40g -jar '+picard+' MarkDuplicates INPUT='+rg_bam_by_lane+' OUTPUT='+marked_bam_by_lane+' METRICS_FILE='+metrics_by_lane+' MAX_FILE_HANDLES_FOR_READ_ENDS_MAP=1000'
+	print('### Mark duplicates within the bam file')
+	os.system(dupes_cmd)
+	# Remove sorted bam
+	os.remove(rg_bam_by_lane)
+
+	### Index the marked by lane bam file
+	indexed_bam_by_lane = './data/post_alignment/'+in_sample+'_'+lane+'_bwa_marked.bai'
+	# The bam index is not automatically rewritten if the file exists. Check if file exists. If so, delete it and create a new one
+	if os.path.exists(indexed_bam_by_lane):
+		os.remove(indexed_bam_by_lane)
+	index_bam_cmd = 'java -Xmx40g -jar '+picard+' BuildBamIndex INPUT='+marked_bam_by_lane+' OUTPUT='+indexed_bam_by_lane
+	print('### Index the marked by lane bam file')
+	os.system(index_bam_cmd)
+
+	### Indel realignment
+	# A fasta dict file of reference is required. Check if exists, if not, then generate it
+	ref_dict_cmd = 'java -jar '+picard+' CreateSequenceDictionary R='+galgal5_ref+' O='+galgal5_ref_dict
+	if not os.path.exists(galgal5_ref_dict):
+		print('### Generate dictionary of contigs and length for reference')
+		os.system(ref_dict_cmd)
+	intervals_by_lane = './data/post_alignment/'+in_sample+'_'+lane+'_intervals_by_lane.list'
+	realigned_bam_by_lane = './data/post_alignment/'+in_sample+'_'+lane+'_realigned_by_lane.bam'
+	realign_target_cmd = 'java -Xmx40g -jar '+gatk+' -T RealignerTargetCreator -R '+galgal5_ref+' -I '+marked_bam_by_lane+' -o '+intervals_by_lane
+	realign_cmd = 'java -Xmx40g -jar '+gatk+' -T IndelRealigner -R '+galgal5_ref+' -I '+marked_bam_by_lane+' -targetIntervals '+intervals_by_lane+' -o '+realigned_bam_by_lane
+	print('### Create realignment targets')
+	os.system(realign_target_cmd)
+	print('### Indel realignment')
+	os.system(realign_cmd)
+	# Remove the marked bam and index
+	os.remove(marked_bam_by_lane)
+	os.remove(indexed_bam_by_lane)
+
+	# Add all bam files to cohort list to later merge
+	if realigned_bam_by_lane not in bams_per_lane_set:
+		bams_per_lane_set.add(realigned_bam_by_lane)
+
+# Move to per sample level
+
+# Convert set of bam files per lane into string
+bams_per_lane = ' I='.join(map(str, bams_per_lane_set))
+
+### Merge bam files from all lanes
+out_dir = './data/merged/'
+# Check if output directory exists, if not create it
+if not os.path.exists(out_dir):
+	os.makedirs(out_dir)
+merged_bam = './data/merged/'+in_sample+'_all_lanes_merged.bam'
+merge_bam_cmd = 'java -Xmx40g -jar '+picard+' MergeSamFiles I='+bams_per_lane+' O='+merged_bam
+print('### Merge bam files from all lanes')
+os.system(merge_bam_cmd)
+# Remove the bam files per lane
+for lane in sample2lanes[in_sample]:
+	barcode = sample2ids[in_sample][0]
+	suffix = sample2ids[in_sample][1]
+	sample_type = sample2ids[in_sample][3]
+	realigned_bam_by_lane = './data/post_alignment/'+in_sample+'_'+lane+'_realigned_by_lane.bam'
+	os.remove(realigned_bam_by_lane)
+
+### Index merged bam file
+merged_bam_index = './data/merged/'+in_sample+'_all_lanes_merged.bai'
+# The bam index is not automatically rewritten if the file exists. Check if file exists. If so, delete it and create a new one
+if os.path.exists(merged_bam_index):
+	os.remove(merged_bam_index)
+merged_bam_index_cmd = 'java -jar -Xmx40g -jar '+picard+' BuildBamIndex INPUT='+merged_bam+' OUTPUT='+merged_bam_index
+print('### Index merged bam file')
+os.system(merged_bam_index_cmd)
+
+### Mark duplicates on merged bam file
+marked_merged_bam = './data/merged/'+in_sample+'_merged_marked.bam'
+metrics_merged = './data/merged/'+in_sample+'_dedup_merged_metrics.txt'
+merged_dupes_cmd = 'java -Xmx40g -jar '+picard+' MarkDuplicates INPUT='+merged_bam+' OUTPUT='+marked_merged_bam+' METRICS_FILE='+metrics_merged+' MAX_FILE_HANDLES_FOR_READ_ENDS_MAP=1000'
+print('### Mark duplicates on merged bam file')
+os.system(merged_dupes_cmd)
+# Remove merged bam file and index
+os.remove(merged_bam)
+os.remove(merged_bam_index)
+
+### Index merged marked bam file
+marked_merged_bam_index = './data/merged/'+in_sample+'_merged_marked.bai'
+# The bam index is not automatically rewritten if the file exists. Check if file exists. If so, delete it and create a new one
+if os.path.exists(marked_merged_bam_index):
+	os.remove(marked_merged_bam_index)
+merged_dupes_index_cmd = 'java -Xmx40g -jar '+picard+' BuildBamIndex INPUT='+marked_merged_bam+' OUTPUT='+marked_merged_bam_index
+print('### Index merged marked bam file')
+os.system(merged_dupes_index_cmd)
+
+### Indel realignment merged bam
+intervals_merged = './data/merged/'+in_sample+'_intervals_merged.list'
+dedupped_realigned_merged_bam = './data/merged/'+in_sample+'_bwa_rg_dedupped_realigned.bam'
+realign_target_merged_cmd = 'java -Xmx40g -jar '+gatk+' -T RealignerTargetCreator -R '+galgal5_ref+' -I '+marked_merged_bam+' -o '+intervals_merged
+realign_merged_cmd = 'java -Xmx40g -jar '+gatk+' -T IndelRealigner -R '+galgal5_ref+' -I '+marked_merged_bam+' -targetIntervals '+intervals_merged+' -o '+dedupped_realigned_merged_bam
+print('### Create realignment targets merged bam')
+os.system(realign_target_merged_cmd)
+print('### Indel realignment merged bam')
+os.system(realign_merged_cmd)
+# Remove the merged marked bam and index
+os.remove(marked_merged_bam)
+os.remove(marked_merged_bam_index)
+
+### Index the nearly final bam file
+dedupped_realigned_merged_bam_index = './data/merged/'+in_sample+'_bwa_rg_dedupped_realigned.bai'
+# The bam index is not automatically rewritten if the file exists. Check if file exists. If so, delete it and create a new one
+if os.path.exists(dedupped_realigned_merged_bam_index):
+	os.remove(dedupped_realigned_merged_bam_index)
+final_bam_index_cmd = 'java -Xmx40g -jar '+picard+' BuildBamIndex  INPUT='+dedupped_realigned_merged_bam+' OUTPUT='+dedupped_realigned_merged_bam_index
+print('### Index the nearly final bam file')
+os.system(final_bam_index_cmd)
+
+### Perform base quality recalibration with gatk
+## Analyze patterns of covariation in the sequence dataset
+recal_table = './data/merged/'+in_sample+'_recalibration_data.table'
+bqsr_1_cmd = 'java -Xmx40g -jar '+gatk+' -T BaseRecalibrator -R '+galgal5_ref+ \
+' -I '+dedupped_realigned_merged_bam+' -knownSites '+dbsnp+' -o '+recal_table
+print('## Analyze patterns of covariation in the sequence dataset')
+os.system(bqsr_1_cmd)
+
+## Perform a second pass to analyze covariation remaining after recalibration
+post_recal_table = './data/merged/'+in_sample+'_post_recalibration_data.table'
+bqsr_2_cmd = 'java -Xmx40g -jar '+gatk+' -T BaseRecalibrator -R '+galgal5_ref+ \
+' -I '+dedupped_realigned_merged_bam+' -knownSites '+dbsnp+' -BQSR '+recal_table+ \
+' -o '+post_recal_table
+print('## Perform a second pass to analyze covariation remaining after recalibration')
+os.system(bqsr_2_cmd)
+
+## Generate before/after plots
+out_dir = './analysis/bsqr/'
+# Check if output directory exists, if not create it
+if not os.path.exists(out_dir):
+	os.makedirs(out_dir)
+recal_plots = './analysis/bsqr/'+in_sample+'_recalibration_plots.pdf'
+bqsr_3_cmd = 'java -Xmx40g -jar '+gatk+' -T AnalyzeCovariates -R '+galgal5_ref+ \
+' -before '+recal_table+' -after '+post_recal_table+' -plots '+recal_plots
+print('## Generate before/after plots')
+os.system(bqsr_3_cmd)
+
+# If an error is expressed the gsalib may need to be installed 
+# see http://gatkforums.broadinstitute.org/gatk/discussion/1244 to install package locally in R
+
+## Apply the recalibration to your sequence data
+bqsr_merged_bam = './data/merged/'+in_sample+'_bwa_rg_dedupped_realigned_bqsr.bam'
+bqsr_4_cmd = 'java -Xmx40g -jar '+gatk+' -T PrintReads -R '+galgal5_ref+ \
+' -I '+dedupped_realigned_merged_bam+' -BQSR '+recal_table+' -o '+bqsr_merged_bam
+print('## Apply the recalibration to your sequence data')
+os.system(bqsr_4_cmd)
+
+### Index the final bam file
+bqsr_merged_bam_index = './data/merged/'+in_sample+'_bwa_rg_dedupped_realigned_bqsr.bai'
+if os.path.exists(bqsr_merged_bam_index):
+	os.remove(bqsr_merged_bam_index)
+# Run command
+final_bam_index_cmd = 'java -Xmx40g -jar '+picard+' BuildBamIndex  INPUT='+bqsr_merged_bam+' OUTPUT='+bqsr_merged_bam_index
+print('### Index the final bam file')
+os.system(final_bam_index_cmd)
+# Remove the dedupped realigned merged bam and index
+os.remove(dedupped_realigned_merged_bam)
+os.remove(dedupped_realigned_merged_bam_index)
+
+### Finished Script
+print('Fin')
+############################
+
+
+# Move the bam files to the appropriate directory
+# Note: $MDV_DIR is an environmental variable set as the base directory of the MDV project (/home/proj/MDW_genomics)
+mkdir ${MDV_DIR}/final_bam
+mv ./data/merged/*_bwa_rg_dedupped_realigned_bqsr.ba* \
+./data/final_bams
+
+# Create a subset of tiny bam files for development purposes
+for bam_file in `find ${MDV_DIR}/final_bam -name "*_Bwa_RG_dedupped_realigned.bam" | grep "901-0"`
+do
+sample=`echo ${bam_file} | xargs -i basename {} | sed 's/_Bwa_RG_dedupped_realigned.bam//'`
+echo ${sample}
+# Varibales
+mini_bam="${MDV_DIR}/mini_bam/${sample}_Bwa_RG_dedupped_realigned_subset.bam"
+# Samtools view
+samtools view -s 0.01 -b ${bam_file} > ${mini_bam}
+# Picard sam sort
+#java -Xmx4g -jar ${HOME}/Apps/picard/build/libs/picard-2.9.2-4-gb4a02aa-SNAPSHOT-all.jar \
+#SortSam INPUT=${mini_sam} OUTPUT=${mini_bam} SORT_ORDER=coordinate
+# Picard bam index
+java -Xmx4g -jar ${HOME}/Apps/picard/build/libs/picard-2.9.2-4-gb4a02aa-SNAPSHOT-all.jar BuildBamIndex \
+INPUT=${mini_bam} \
+OUTPUT=${mini_bam}".bai"
+done
+
+
+
+
+
+

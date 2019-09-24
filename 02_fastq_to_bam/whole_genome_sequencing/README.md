@@ -16,4 +16,4 @@ Reads were inspected for quantity and quality before and after trimming with Fas
 
 Analysis was inspired by the Genome Analysis Toolkit (GATK) best practices pipeline.
 
-
+Perl script written for Technical University of Munich cluster by [Hongen Xu](https://github.com/hongenxu).

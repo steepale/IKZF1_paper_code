@@ -36,7 +36,7 @@ Reads were mapped according to the GATK best practices and STAR manual in order 
 - Mapped reads with N's in their CIGAR strings were split and mapping qualities were reassigned with GATK
 - Mapped reads were realigned around Indels with GATK
 - Base quality scores were recalibrated with GATK
-- Alignment files were merged with Picard Tools and were again processed via:
+- Alignment files were merged across lanes with Picard Tools and underwent another round of processing:
     - Mapped reads with N's in their CIGAR strings were split and mapping qualities were reassigned
     - Mapped reads were realigned around Indels
     - Base quality scores were recalibrated

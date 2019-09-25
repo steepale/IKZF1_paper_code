@@ -5,3 +5,6 @@ Twelve experimental layers (three line 6, three line 7, and six line 6x7 F1) und
 ## Data Files:
 - Excel document with fully informative SNPs: `2012_affy-600K-informative-snps_cheng.xlsx`
 - The ~600K SNPs from 12 experimental layers: `600K_Germline_SNPs_6x7_F1_Microarray.txt`
+
+## Notes:
+Coordinates are relative to Galgal4 genome build.

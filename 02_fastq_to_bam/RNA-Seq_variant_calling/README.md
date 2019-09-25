@@ -1,6 +1,6 @@
 # Processing and Mapping of RNA-Seq Data for Somatic and Germline Variant Calling
 
-Reads were mapped according to the GATK best practices and STAR manual in order to call somatic and germline variants from RNA-Seq aligned data.
+Reads were mapped according to the GATK best practices and STAR manual in preparation to call somatic and germline variants from RNA-Seq aligned data.
 
 ## Analyses in pipeline:
 

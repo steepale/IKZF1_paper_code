@@ -1,4 +1,4 @@
-# Processing and Mapping of RNA-Seq Data for Differential Gene Expression Analysis in both *Gallus gallus* and Marek's Disease Virus (MDV) Transcriptome 
+# Processing and Mapping of RNA-Seq Data for Differential Gene Expression Analysis in Chicken and Marek's Disease Virus (MDV) Transcriptome 
 
 RNA-Seq reads were processed and mapped to an appended Galgal5 genome with the MDV genome as an additional chromosome. Annotation was also adjusted to include both genomes. The rational was to capture the reads from integrated copies of the MDV genome. Although we could not consistently determine the integration sites of MDV genomes--due to long repeat regions flanking integration and short reads from our sequencing approach--we were able to examine RNA quantities from MDV in tumor tissue. However, it is important to acknowledge that we cannot differentiate reads mapping to the MDV genomes as resulting from either cytolytic or genome-integrated-latent MDV.
 
@@ -52,5 +52,3 @@ In all steps of this analysis, only paired reads were considered; therefore, if 
 - [2015_rnaseq_tumor-normal-gonad](https://github.com/steepale/IKZF1_paper_code/tree/master/00_genomic_datasets/2015_rnaseq_tumor-normal-gonad)
 
  
-
-

@@ -64,7 +64,7 @@ A verbose workflow documentation script (should be adjusted in the future into a
 ## Genomic Datasets:
 Training data:
 - [2015_affy-snp_tumors-6-7-6x7](https://github.com/steepale/IKZF1_paper_code/tree/master/00_genomic_datasets/2015_affy-snp_tumors-6-7-6x7)
-- [2012_affy-snp-600K_6-7-6x7](https://github.com/steepale/IKZF1_paper_code/tree/master/00_genomic_datasets/2012_affy-snp-600K_6-7-6x7)
+- [2012_affy-snp-600K_6-7-6x7](https://github.com/steepale/IKZF1_paper_code/tree/master/00_genomic_datasets/2012_affy-snp-600K_6-7-6x7)  
 Whole Genome Sequencing:
 - [2011_wgs_lines67-parental](https://github.com/steepale/IKZF1_paper_code/tree/master/00_genomic_datasets/2011_wgs_lines67-parental)
 - [2014_wgs_6x7-F1](https://github.com/steepale/IKZF1_paper_code/tree/master/00_genomic_datasets/2014_wgs_6x7-F1)

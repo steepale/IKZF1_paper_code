@@ -1,0 +1,6 @@
+ 798948 TSA=deletion
+   2583 TSA=indel
+ 668655 TSA=insertion
+     11 TSA=sequence_alteration
+19359123 TSA=SNV
+     34 TSA=substitution

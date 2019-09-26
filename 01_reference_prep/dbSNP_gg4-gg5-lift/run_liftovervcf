@@ -1,0 +1,3 @@
+#!/bin/bash
+
+qsub -b y -q all.q -l vf=48G -N "liftover" "java -jar /home/users/xu/picard-tools-1.141/picard.jar LiftoverVcf I=dbSNPgalgal4.vcf O=dbSNP.galgal5.vcf C=galgal4togalgal5.liftover.chn REJECT=dbSNP.galgal4togalgal5.reject.vcf R=galgal5.fa"

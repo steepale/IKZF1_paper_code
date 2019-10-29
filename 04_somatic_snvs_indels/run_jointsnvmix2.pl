@@ -30,7 +30,7 @@ foreach my $num (0..25){
     #my $cmd1="$jsm train joint_snv_mix_two --min_normal_depth 8 --min_tumour_depth 6 --convergence_threshold 0.01 $genome $normal_bam $tumor_bam $config/joint_priors.cfg $config/joint_params.cfg $output_dir/$sample.cfg ";
     my $cmd1="$jsm train joint_snv_mix_two --min_normal_depth 8 --min_tumour_depth 6 --convergence_threshold 0.000001 $genome $normal_bam $tumor_bam $config/joint_priors.cfg $config/joint_params.cfg $output_dir/$sample.cfg ";
     my $cmd2="$jsm classify joint_snv_mix_two $genome $normal_bam $tumor_bam $output_dir/$sample.cfg $output_dir/$sample.tsv";
-    my $cmd3=qq(awk -F \"\\t\" 'NR!=1 && \$4!="N" && \$10+\$11>=0.95' $output_dir/$sample.tsv >$output_dir/$sample.filtered.tsv);#filtering to reduce file size
+    my $cmd3=qq(awk -F \"\\t\" 'NR!=1 && \$4!="N" && \$10+\$11>=0.95' $output_dir/$sample.tsv >$output_dir/$sample.filtered.tsv); #filtering to reduce false positive calls
     system "cp ~/template.sh $sample.jsm.job";
     open OUT, ">>$sample.jsm.job" or die $!;
     print OUT "$cmd1\n$cmd2\n$cmd3\n";
@@ -39,4 +39,26 @@ foreach my $num (0..25){
     #`qsub -b y -q all.q -l vf=8G,core=1 -N "jsm$sample" "sh ./$sample.jsm.job"`;
 }
 
+# Output
+"""
+The columns are as follows 
+1. chrom - Chromosome the site is on. 
+2. position - 1-based position on the chromosome 
+3. ref_base - Base found in reference genome at this position. 
+4. var_base - Variant base found at this position. If no variant base is found this will be N. 
+5. normal_counts_a - Number of read matching ref_base in the normal at this position 
+6. normal_counts_b - Number of reads matching var_base in the normal at this position. 
+7. tumour_counts_a - Number of read matching ref_base in the tumour at this position 
+8. tumour_counts_b - Number of reads matching var_base in the tumour at this position. 
+9. p_AA_AA - Probability of joint genotype AA_AA 
+10. p_AA_AB - Probability of joint genotype AA_AB 
+11. p_AA_BB - Probability of joint genotype AA_BB 
+12. p_AB_AA - Probability of joint genotype AB_AA 
+13. p_AB_AB - Probability of joint genotype AB_AB 
+14. p_AB_BB - Probability of joint genotype AB_BB 
+15. p_AB_AA - Probability of joint genotype BB_AA 
+16. p_AB_AB - Probability of joint genotype BB_AB 
+17. p_AB_BB - Probability of joint genotype BB_BB
+"""
 
+#To extract somatic positions from this file add p_AA_AB + p_AA_BB together to get the somatic genotype probability.

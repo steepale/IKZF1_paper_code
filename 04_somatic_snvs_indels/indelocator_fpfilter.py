@@ -8,18 +8,13 @@
 
 # For InDels:
 ######################################
-import sys # This is a module to be imported for the next two lines allowing the script to take an input and output file as arguments
+import sys 
 import os
 import re
-#import numpy as np
-#import matplotlib as mpl
-#import matplotlib.pyplot as plt
-#from scipy import stats
-#from scipy.stats import norm
 
-infile=open(sys.argv[1]) # This tells the Python script that the second file in the arguments (script is file 1) is the infile. Remember python is zero based
+infile=open(sys.argv[1])
 
-outfile=open(sys.argv[2], 'w') # This tells the pythin script that the third file is the outfile and tells python to write to that file ('w' is for write)
+outfile=open(sys.argv[2], 'w')
 
 for line in infile:
   if line[0] == '#': 
@@ -41,13 +36,6 @@ for line in infile:
   		T_MQ = float(columns[7].split(';')[11].split('=')[1].split(',')[0])
   		T_NQSBQ_title = (columns[7].split(';')[12].split('=')[0])
   		T_NQSBQ = float(columns[7].split(';')[12].split('=')[1].split(',')[0])
-  		#Del_size = int(len(columns[3])-len(columns[4]))
-  		#T_SC_title = (columns[7].split(';')[14].split('=')[0])
-  		#T_SC_VF = int(columns[7].split(';')[14].split('=')[1].split(',')[0])
-  		#T_SC_VR = int(columns[7].split(';')[14].split('=')[1].split(',')[1])
-  		#T_SC_RF = int(columns[7].split(';')[14].split('=')[1].split(',')[2])
-  		#T_SC_RR = int(columns[7].split(';')[14].split('=')[1].split(',')[3])
-  		#oddsratio, pvalue = (stats.fisher_exact([[T_SC_VF, T_SC_RF], [T_SC_VR, T_SC_RR]]))
   		if N_DP_title != 'N_DP':
   			print(line)
   			print('Error: N_DP out of position')
@@ -74,9 +62,6 @@ for line in infile:
   		if T_NQSBQ_title != 'T_NQSBQ':
   			print(line)
   			print('Error: T_NQSBQ out of position')
-  		#if T_SC_title != 'T_SC':
-  		#	print(line)
-  		#	print('Error: T_SC out of position')
   		if N_DP >= 6:
   			if N_MQ >= 20.0:
   				if N_NQSBQ >= 25.0:

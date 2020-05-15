@@ -75,12 +75,20 @@ count_genos <- function(x) {
         row_vector <- x %>% unlist()
         sum(str_count(row_vector, common)) / (length(row_vector)-sum(str_count(row_vector,'---')))
 }
+################################################################################
 
 # Calculate the most common categorical value from vector or list
 ################################################################################
 cat_mode <- function(x) {
         uniqx <- unique(na.omit(x))
         uniqx[which.max(tabulate(match(x, uniqx)))]
+}
+################################################################################
+
+# Function to speed up making rows into lists for interation with lapply
+################################################################################
+f_pmap_aslist <- function(df) {
+        purrr::pmap(as.list(df), list)
 }
 ################################################################################
 
@@ -129,11 +137,12 @@ summary(df)
 # Note: Row-oriented work is difficult in R--https://resources.rstudio.com/webinars/thinking-inside-the-box-you-can-do-that-inside-a-data-frame-april-jenny-bryan
 F1_df <- df %>% dplyr::select(F1_1, F1_2, F1_3, F1_4, F1_5, F1_6)
 
+
 # Convert rows into lists (20 seconds)
 row_list <- F1_df %>% purrr::pmap(list)
 # Count the genotypes (4 minutes)
 F1_df$GENO_FREQ <- lapply(row_list,count_genos) %>% unlist()
-# Calculate sats about conserved and differing genotypes
+# Calculate stats about conserved and differing genotypes
 F1_n_diff <- dim(F1_df %>% filter(GENO_FREQ < 1))[1]
 F1_n_con <- dim(F1_df %>% filter(GENO_FREQ == 1))[1]
 F1_n_all <- dim(F1_df)[1]
@@ -239,6 +248,78 @@ L7_freq_con = L7_n_con/L7_n_all
 # 4029 sites differ out of 560086 in 3 samples
 # 99.27% conserved
 
+# Line 6 and F1s: 3x Line 6, 6x F1s
+###########################
+
+# Generate rows for number and percent similarity between columns
+# Note: Row-oriented work is difficult in R--https://resources.rstudio.com/webinars/thinking-inside-the-box-you-can-do-that-inside-a-data-frame-april-jenny-bryan
+L6F1_df <- df %>% dplyr::select('6_1', '6_2', '6_3','F1_1','F1_2','F1_3','F1_4','F1_5','F1_6')
+
+# Convert rows into lists (20 seconds)
+row_list <- L6F1_df %>% purrr::pmap(list)
+# Count the genotypes (4 minutes)
+L6F1_df$GENO_FREQ <- lapply(row_list,count_genos) %>% unlist()
+# Calculate the percentage of similarity
+L6F1_df %>% filter(GENO_FREQ < 1)
+
+# Calculate sats about conserved and differing genotypes
+L6F1_n_diff <- dim(L6F1_df %>% filter(GENO_FREQ < 1))[1]
+L6F1_n_con <- dim(L6F1_df %>% filter(GENO_FREQ == 1))[1]
+L6F1_n_all <- dim(L6F1_df)[1]
+# Frequency of genotype conservation across 600K F1 genotypes
+L6F1_freq_con = L6F1_n_con/L6F1_n_all
+
+# 156134 sites differ out of 560086 in 9 samples
+# 72.12% conserved
+
+# Line 7 and F1s: 3x Line 7, 6x F1s
+###########################
+
+# Generate rows for number and percent similarity between columns
+# Note: Row-oriented work is difficult in R--https://resources.rstudio.com/webinars/thinking-inside-the-box-you-can-do-that-inside-a-data-frame-april-jenny-bryan
+L7F1_df <- df %>% dplyr::select('7_1', '7_2', '7_3','F1_1','F1_2','F1_3','F1_4','F1_5','F1_6')
+
+# Convert rows into lists (20 seconds)
+row_list <- L7F1_df %>% purrr::pmap(list)
+# Count the genotypes (4 minutes)
+L7F1_df$GENO_FREQ <- lapply(row_list,count_genos) %>% unlist()
+# Calculate the percentage of similarity
+L7F1_df %>% filter(GENO_FREQ < 1)
+
+# Calculate sats about conserved and differing genotypes
+L7F1_n_diff <- dim(L7F1_df %>% filter(GENO_FREQ < 1))[1]
+L7F1_n_con <- dim(L7F1_df %>% filter(GENO_FREQ == 1))[1]
+L7F1_n_all <- dim(L7F1_df)[1]
+# Frequency of genotype conservation across 600K F1 genotypes
+L7F1_freq_con = L7F1_n_con/L7F1_n_all
+
+# 156497 sites differ out of 560086 in 9 samples
+# 72.05% conserved
+
+# Inbred Lines: 3x Line 6, 3x Line 7
+###########################
+
+# Generate rows for number and percent similarity between columns
+# Note: Row-oriented work is difficult in R--https://resources.rstudio.com/webinars/thinking-inside-the-box-you-can-do-that-inside-a-data-frame-april-jenny-bryan
+L67_df <- df %>% dplyr::select('6_1', '6_2', '6_3','7_1', '7_2', '7_3')
+
+# Convert rows into lists (20 seconds)
+row_list <- L67_df %>% purrr::pmap(list)
+# Count the genotypes (4 minutes)
+L67_df$GENO_FREQ <- lapply(row_list,count_genos) %>% unlist()
+# Calculate the percentage of similarity
+L67_df %>% filter(GENO_FREQ < 1)
+
+# Calculate sats about conserved and differing genotypes
+L67_n_diff <- dim(L67_df %>% filter(GENO_FREQ < 1))[1]
+L67_n_con <- dim(L67_df %>% filter(GENO_FREQ == 1))[1]
+L67_n_all <- dim(L67_df)[1]
+# Frequency of genotype conservation across 600K F1 genotypes
+L67_freq_con = L67_n_con/L67_n_all
+
+# 155721 sites differ out of 560086 in 12 samples
+# 72.19% conserved
+
 # All samples: 3x Line 6, 3x Line 7, 6x F1s
 ###########################
 
@@ -260,8 +341,9 @@ L67F1_n_all <- dim(L67F1_df)[1]
 # Frequency of genotype conservation across 600K F1 genotypes
 L67F1_freq_con = L67F1_n_con/L67F1_n_all
 
-# 4029 sites differ out of 560086 in 3 samples
-# 99.27% conserved
+# 157004 sites differ out of 560086 in 12 samples
+# 71.97% conserved
+
 
 #' ## Combine Datasets and Save Results
 #'
@@ -272,16 +354,24 @@ L67F1_freq_con = L67F1_n_con/L67F1_n_all
 ################################################################################
 
 
-
-
-
 # Bind GENO_FREQ columns into the original dataset and save
 names(L7_df)[4] <- "L7_GENO_FREQ"
 names(L6_df)[4] <- "L6_GENO_FREQ"
 names(F1_df)[7] <- "F1_GENO_FREQ"
+names(F1_df_3a)[4] <- "F1_3a_GENO_FREQ"
+names(F1_df_3b)[4] <- "F1_3b_GENO_FREQ"
+names(L67_df)[7] <- "L67_GENO_FREQ"
+names(L67F1_df)[13] <- "L67F1_GENO_FREQ"
 
 # Generate a tibble of data and conservation
-df_all <- cbind(df,L6_df$L6_GENO_FREQ,L7_df$L7_GENO_FREQ,F1_df$F1_GENO_FREQ)
-names(df_all)
+df_all <- cbind(df,L6_df$L6_GENO_FREQ,L7_df$L7_GENO_FREQ,F1_df$F1_GENO_FREQ,F1_df_3a$F1_3a_GENO_FREQ,F1_df_3b$F1_3b_GENO_FREQ, L67_df$L67_GENO_FREQ, L67F1_df$L67F1_GENO_FREQ )
+# Adjust the names
+names(df_all)[17:23] <- c("L6_GENO_FREQ","L7_GENO_FREQ","F1_GENO_FREQ","F1_3a_GENO_FREQ","F1_3b_GENO_FREQ","L67_GENO_FREQ","L67F1_GENO_FREQ")
+
+# Save data
+write.table(df_all, file = paste0('./data/',date,'_L67F1-genotype-frequencies_',auth,'.txt'),
+            quote = FALSE, sep= "\t", row.names = FALSE)
+
+
 
 

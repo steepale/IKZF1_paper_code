@@ -1,0 +1,422 @@
+---
+title: "Predict Real Germline SNPs from Machine Learning Algorithm"
+author: "Alec Steep"
+date: "11/9/2020"
+output: 
+        html_document:
+                code_folding: hide
+                        toc: true
+                        highlight: zenburn
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+# Goals of Analysis
+* Prepare raw (unfiltered) germline SNP data for prediction
+* Predict germline SNPs as TP or FP
+* Generate a final set of TP germline SNPs (those from training/testing/prediction)
+* Ensure that the parameters of prediction and training are similar via a PCA plot
+
+## Setup the Environment
+```{r Setup Environment}
+################################################################################
+##### Resources and Dependencies ###############################################
+################################################################################
+
+# Set the working directory
+WD <- '/Volumes/Frishman_4TB/MDV_Project/germline_snps_indels'
+#setwd(WD)
+
+# Load the dependencies
+#source("https://bioconductor.org/biocLite.R")
+#BiocManager::install("")
+#install.packages("earth")
+
+# Load dependencies
+pacs...man <- c("tidyverse","data.table","R.utils","ggpubr","plyr","ROCR","ff","GenomicRanges","BSgenome","BSgenome.Ggallus.UCSC.galGal4","BSgenome.Ggallus.UCSC.galGal5","rtracklayer", "caret","pROC","modelr","ggplot2","e1071","doMC","glmnet", "lattice","MASS","pamr","pls","sparseLDA","lubridate","reshape2","kernlab", "klaR","latticeExtra","earth","partykit","gtools")
+lapply(pacs...man, FUN = function(X) {
+        do.call("library", list(X)) 
+})
+
+############################################################
+##### Functions ############################################
+############################################################
+
+select <- dplyr::select
+slice <- dplyr::slice
+source(paste0(WD,'/functions/not_in.R'))
+source(paste0(WD,'/functions/benchmark.R'))
+source(paste0(WD,'/functions/load_normal_vcfs.R'))
+source(paste0(WD,'/functions/cat_mode_byrow.R'))
+source(paste0(WD,'/functions/f_pmap_aslist.R'))
+source(paste0(WD,'/functions/elbow_finder.R'))
+source(paste0(WD,'/functions/Log10Matrix.R'))
+source(paste0(WD,'/functions/AutoScaleMatrix.R'))
+source(paste0(WD,'/functions/modeav.R'))
+source(paste0(WD,'/functions/count_na.R'))
+source(paste0(WD,'/functions/se_mean.R'))
+source(paste0(WD,'/functions/Mode.R'))
+source(paste0(WD,'/functions/NumericSummaryStats.R'))
+
+```
+
+## Load & Clean Data
+##### Data Files to Load:
+* GATK 600K-Targetted Raw SNPs: unfiltered calls from 22 F1 control samples as g vcf (collective genotypes)
+* The model
+* The Data used to train the model
+
+```{r Load the Data}
+################################################################################
+#####     Load & Clean Data      ###############################################
+################################################################################
+
+ptm <- proc.time()
+
+# To load the ML model
+###################################
+rpart_fit <- readRDS(paste0(WD,"/models/20200203_cart-model-germline-snps_steep.rds"))
+
+# Load the training set and test set
+###################################
+ptm <- proc.time()
+# TODO: These files have INDELS and irregular SNPs; subset SNPs so they are not irregular and update model
+test_file <- paste0(WD,'/data/20200126_germline-snp-ml-test-set-all-ann_steep.txt')
+test_set <- read.table(file = test_file, header = TRUE, sep = '\t') %>% 
+        as_tibble()
+# TODO: These files have INDELS and irregular SNPs; subset SNPs so they are not irregular and update model
+train_file <- paste0(WD,'/data/20200126_germline-snp-ml-train-set-all-ann_steep.txt')
+train_set <- read.table(file = train_file, header = TRUE, sep = '\t') %>% as_tibble()
+
+# Raw Germline SNP calls (To Overlap with K600_df)
+######################
+# Raw SNPs file
+subset <- T
+if(subset) {
+        # Generate a file of randomly choosen rows for testing (consider putting 'if' statements in here if files already exist to save time)
+        n=99999
+        # Generate header
+        sys_cmd <- paste0('bgzip -d -c ',WD,'/data/raw_snps_indels/germline_raw_snps_indels_genotyped.g.vcf.gz | grep "^#" > ',WD,'/data/raw_snps_indels/germline_raw_snps_indels_genotyped_',n,'.g.vcf')
+        system(sys_cmd)
+        # Collect random data
+        sys_cmd <- paste0('bgzip -d -c ',WD,'/data/raw_snps_indels/germline_raw_snps_indels_genotyped.g.vcf.gz | grep -v "^#" | shuf -n ',n,' >> ',WD,'/data/raw_snps_indels/germline_raw_snps_indels_genotyped_',n,'.g.vcf')
+        system(sys_cmd)
+        # Load the raw SNP calls
+        raw_file <- paste0(WD,'/data/raw_snps_indels/germline_raw_snps_indels_genotyped_',n,'.g.vcf')
+        raw_df <- load_normal_vcfs(raw_file)
+}else{
+        # Load the raw SNP calls
+        raw_file <- paste0(WD,'/data/raw_snps_indels/germline_raw_snps_indels_genotyped.g.vcf.gz')
+        raw_df <- load_normal_vcfs(raw_file)
+}
+proc.time() - ptm
+```
+
+```{r Save Big File}
+raw_out <- paste0(WD,'/data/raw_snps_indels/germline_raw_snps_indels_genotyped.g.RDS')
+#saveRDS(raw_df, file = raw_out)
+
+```
+
+
+```{r Filter for SNPS}
+# Filter for SNPs
+########################################
+# Collect all possible multiple SNP combination
+prm <- gtools::permutations(n=4, r=2, v=c('A','T','C','G'))
+hetero_alleles <- apply(prm, 1, function(x)paste0(x, collapse=','))
+#Filter out indels and allow for possibility of multiple SNPs at any given location
+raw_df <- raw_df %>%
+        filter(REF %in% c('A','C','T','G',hetero_alleles)) %>%
+        filter(ALT %in% c('A','C','T','G',hetero_alleles)) %>%
+        mutate(REF = as.character(REF)) %>%
+        mutate(ALT = as.character(ALT))
+
+print("Seperating INFO Column")
+
+# Transpose data frames and add annotation
+raw_info <- raw_df %>% select(INFO) %>% data.table::transpose()
+# Search for ID, if there, generate column
+#AC
+INFO_COLUMNS <- c("AC","AF","AN","BaseQRankSum","ClippingRankSum","DP","ExcessHet","FS","InbreedingCoeff","MLEAC","MLEAF","MQ","MQRankSum","QD","ReadPosRankSum","SOR")
+# Iterate through each column and add the apprpriate annotation
+for(x in INFO_COLUMNS){
+        print(x)
+        raw_df[[x]] <- str_match(raw_info, paste0(x,"=(.*?)(;|$)"))[,2] %>% as.double()
+}
+
+# Remove unnecessary columns (Only a few columns are required for ML prediction)
+raw_df <- raw_df %>% select(-"INFO", -"BaseQRankSum", -"ClippingRankSum",
+                                   -"ExcessHet",-"FS",-"InbreedingCoeff",-"MLEAC",
+                                   -"MLEAF",-"MQ",-"MQRankSum",-"QD",
+                                   -"ReadPosRankSum",-"SOR")
+```
+
+```{r Wrangle Data}
+################################################################################
+### Iterate through each sample and adjust dataset #############################
+################################################################################
+
+# Collect samples
+samples <- names(raw_df)[startsWith(names(raw_df), 'X')]
+# Generate empty dataframe for samples to be placed into
+df_pred <- data.frame()
+# Model will be performed on a per-sample basis
+#sample <- samples[2]
+for(sample in samples){
+        
+        ########################################################################
+        ######################## Wrangle Data ##################################
+        ########################################################################
+        
+        # Wrangle the FORMAT column
+        #############################
+        print(paste0('SAMPLE: ',sample))
+        print('Wrangling Data...')
+        # Other samples
+        not_sample <- samples[samples %!in% sample]
+        # Select columns needed
+        sample_df <- raw_df %>% select(-all_of(not_sample))
+        # Separate the FORMAT and sample columns
+        # Capture for format factors
+        FRMT_FACTORS <- table(sample_df$FORMAT) %>% names()
+        # Generate a tibble list
+        tib_list <- list()
+        # Iterate through each occurance of FORMAT column
+        for( i in 1:length(FRMT_FACTORS) ){
+                # Generate FACTOR
+                FACTOR <- FRMT_FACTORS[i]
+                # Generate the new columns
+                new_cols <- str_split(FACTOR,':') %>% unlist()
+                # Separate the FACTOR column into new columns
+                tib_list[[i]] <- sample_df %>% 
+                        filter(FORMAT == FACTOR) %>%
+                        arrange(CHROM,POS) %>%
+                        separate(sample, into = new_cols, sep = ':')
+                # Make sure to add columns that do not exist
+                all_names <- FRMT_FACTORS %>% str_split(':') %>% 
+                        unlist() %>% unique()
+                add_names <- all_names[all_names %!in% names(tib_list[[i]])]
+                for(c in add_names) {
+                        tib_list[[i]][[c]] <- NA
+                }
+                # Remove the FORMAT column
+                tib_list[[i]] <- tib_list[[i]] %>% dplyr::select(-FORMAT)
+        }
+        # Combine the dataframes
+        sample_df = do.call(rbind, tib_list)
+        
+        # Ensure columns are proper data types
+        ############################
+        # Separate the AD column into REF_AD and ALT_AD
+        ##FORMAT=<ID=AD,Number=.,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">
+        
+        # REF = A
+        # ALT = A,T,C (0/1, 1/1, 0/2, 1/2, 1/3)
+        # ALT = A (0/1, 1/1)
+        # ALT = T (0/1, 1/1)
+        # ALT = C (0/1, 1/1)
+        
+        # Collect double SNPs and seperate them into single SNPs
+        sample_df1 <- sample_df %>% 
+                #filter(GT %!in% c('./.','0/0')) %>%
+                filter(ALT %in% hetero_alleles) %>%
+                select(CHROM,POS,REF,ALT,GT,AD,DP) %>%
+                separate(AD, into = c("REF_AD", 'ALT_AD'), extra = "merge") %>%
+                separate_rows(ALT,ALT_AD) %>%
+                filter(ALT_AD > 0)
+        # Collect single SNPs
+        sample_df2 <- sample_df %>% 
+                #filter(GT %!in% c('./.','0/0')) %>%
+                filter(ALT %!in% hetero_alleles) %>%
+                select(CHROM,POS,REF,ALT,GT,AD,DP) %>%
+                separate(AD, into = c("REF_AD", 'ALT_AD')) %>%
+                filter(ALT_AD > 0)
+        
+        rbind(sample_df1, sample_df2) %>%
+                arrange(CHROM,POS,REF,ALT) %>%
+                select(GT) %>% table()
+        
+        # Combine dataframes and chnage the GT values to fit model
+        sample_df <- rbind(sample_df1, sample_df2) %>%
+                arrange(CHROM,POS,REF,ALT) %>%
+                mutate(GT = case_when(GT == '0/1' ~ '0/1',
+                                      GT == '0/2' ~ '0/1',
+                                      GT == '1/1' ~ '1/1',
+                                      GT == '1/2' ~ '1/1',
+                                      GT == '2/2' ~ '1/1'))
+        
+        ########################################################################
+        ######## Remove data used to train and test the model ##################
+        ########################################################################
+        # Remove the training and test sets from prediction set (same sets use for all samples)
+        test_train <- rbind(train_set,test_set) %>%
+                select(CHROM,POS,REF,ALT)
+        test_train$ALT %>% table()
+        train_set %>% select(ALT) %>% table()
+        sample_df <- anti_join(sample_df, test_train, by = c('CHROM','POS','REF','ALT'))
+        
+        ########################################################################
+        ######## Process Prediction Set for ML #################################
+        ########################################################################
+        # Apply dummary variables
+        dmy <- dummyVars(" ~ GT ", data = sample_df)
+        dum_df <- as_tibble(predict(dmy, newdata = sample_df))
+        # The results are returned as numeric factors, make them factors
+        dum_df$`GT.0/1` <- as.factor(dum_df$`GT0/1`)
+        dum_df$`GT.1/1` <- as.factor(dum_df$`GT1/1`)
+        dum_df <- dum_df %>% select('GT.0/1','GT.1/1')
+        
+        # Bind back into main dataframe
+        sample_df <- cbind(sample_df, dum_df) %>%
+                select(-GT)
+        # Adjust object types
+        sample_df$REF_AD <- as.numeric(sample_df$REF_AD)
+        sample_df$ALT_AD <- as.numeric(sample_df$ALT_AD)
+        sample_df$DP <- as.numeric(sample_df$DP)
+        
+        # Create a list of dependent variables (ungrouped as opposed to grouped)
+        # dependents_ungrouped <- c('REF_AD','ALT_AD','DP','GT.0/1','GT.1/1')
+        # 
+        #pp_ungrouped <- preProcess(sample_df[,dependents_ungrouped], 
+        #                            method = c("center", "scale", "BoxCox", "nzv"))
+        #pp_ungrouped <- preProcess(df_ungrouped[,dependents_ungrouped], 
+        #                           method = c("nzv"))
+        #transformation_file <- paste0(WD,'/data/20200126_ungrouped-transformation-parameters_steep.RDS')
+        #pp_ungrouped <- readRDS(transformation_file)
+        #pp_ungrouped$method
+        
+        ## Apply the transformations
+        #df_ungrouped <- predict(pp_ungrouped, newdata = sample_df) %>% 
+        #         as_tibble()
+        # REF_AD
+        sample_df$REF_AD <- sample_df %>% 
+                select(REF_AD) %>%
+                as.matrix() %>%
+                Log10Matrix() %>%
+                AutoScaleMatrix() %>%
+                as.vector()
+        # ALT_AD
+        sample_df$ALT_AD <- sample_df %>% 
+                select(ALT_AD) %>%
+                as.matrix() %>%
+                AutoScaleMatrix() %>%
+                as.vector()
+        # DP
+        sample_df$DP <- sample_df %>% 
+                select(DP) %>%
+                as.matrix() %>%
+                Log10Matrix() %>%
+                AutoScaleMatrix() %>%
+                as.vector()
+        
+        ########################################################################
+        ################ PCA Analysis ##########################################
+        ########################################################################
+        # Perform a PCA analysis to ensure that the training/test/and prediction sets all have similar multidimensional profiles.
+        colnames(sample_df) <- c("CHROM","POS","REF","ALT",
+                                 "REF_AD","ALT_AD","DP","GT.0.1","GT.1.1")
+        # Create the PCA dfs
+        #####################
+        # sample
+        sample_pca <- sample_df %>% 
+                select("REF_AD","ALT_AD","DP","GT.0.1","GT.1.1") %>%
+                mutate(REF_AD = as.numeric(REF_AD)) %>%
+                mutate(ALT_AD = as.numeric(ALT_AD)) %>%
+                mutate(DP = as.numeric(DP)) %>%
+                mutate(GT.0.1 = as.numeric(GT.0.1)) %>%
+                mutate(GT.1.1 = as.numeric(GT.1.1))
+        # train
+        train_pca <- train_set %>% 
+                select("REF_AD","ALT_AD","DP","GT.0.1","GT.1.1") %>%
+                mutate(REF_AD = as.numeric(REF_AD)) %>%
+                mutate(ALT_AD = as.numeric(ALT_AD)) %>%
+                mutate(DP = as.numeric(DP)) %>%
+                mutate(GT.0.1 = as.numeric(GT.0.1)) %>%
+                mutate(GT.1.1 = as.numeric(GT.1.1))
+        # test
+        test_pca <- test_set %>% 
+                select("REF_AD","ALT_AD","DP","GT.0.1","GT.1.1") %>%
+                mutate(REF_AD = as.numeric(REF_AD)) %>%
+                mutate(ALT_AD = as.numeric(ALT_AD)) %>%
+                mutate(DP = as.numeric(DP)) %>%
+                mutate(GT.0.1 = as.numeric(GT.0.1)) %>%
+                mutate(GT.1.1 = as.numeric(GT.1.1))
+        
+        # Create a list of dataframes
+        Names <- c('sample', 'train', 'test')
+        dflist <- list(sample_pca, train_pca, test_pca)
+        #i <- 1
+        for(i in 1:length(dflist)){
+                df_pca <- dflist[[i]]
+                #sum(is.na(df_pca))
+                # TODO: Perform KNN imputation to deal with NA values
+                df_pca <- df_pca[complete.cases(df_pca), ]
+                name_pca <- Names[i]
+                pca <- prcomp(df_pca, scale. = F)
+                percentVar <- pca$sdev^2/sum(pca$sdev^2)
+                PC <- pca$x %>% as.data.frame()
+                PC$feature_key <- row.names(pca$x)
+                df_plot <- data.frame(PC = seq_along(pca$sdev^2/sum(pca$sdev^2)),
+                                      VAR = pca$sdev^2/sum(pca$sdev^2)) %>%
+                        mutate(ELBOW = ifelse(PC < elbow_finder(PC,VAR)[1], 'UPPER', 'FORE'))
+                p <- df_plot %>%
+                        ggplot(aes(PC,VAR, color = ELBOW)) +
+                        geom_point() +
+                        geom_vline(xintercept = elbow_finder(df_plot$PC,df_plot$VAR)[1], linetype='dashed') +
+                        ggtitle(paste0('Variance by PCs: ',name_pca)) +
+                        ylab('Variance')
+                plot(p)
+                
+                #pca <- prcomp(df_pca, scale. = F)
+                df_plot <- pca$x %>% as.data.frame()
+                df_plot$key <- row.names(df_plot)
+                percentVar <- pca$sdev^2/sum(pca$sdev^2)
+                # Plot the top variables associated with PCs 1 or 2
+                p <- df_plot %>%
+                        ggplot(aes(x = PC1, y = PC2)) +
+                        geom_point(size = 2, alpha = 0.1) +
+                        coord_equal() +
+                        xlab(paste0('PC1: ',round(percentVar[1]*100,2),'% variance')) +
+                        ylab(paste0('PC2: ',round(percentVar[2]*100,2),'% variance')) +
+                        ggtitle(paste0('PCA: ',name_pca)) +
+                        coord_fixed(ratio=1)
+                plot(p)
+        }
+        
+        ########################################################################
+        ################ Apply the ML Model ####################################
+        ########################################################################
+        # Predict SNPs as TP/FP with the model
+        # Collect the TP
+        
+        # Use the Model
+        
+        pred <- predict(rpart_fit, sample_df)
+        
+        
+        ########################################################################
+        ################ Concatenate the TP ####################################
+        ########################################################################
+        # Concatenate the TP from training/testing/prediction set
+        # Save those results
+        
+        
+}
+# Examine Data
+str(df_mod)
+summary(df_mod)
+
+# Write the dataframe to file
+out_file <- paste0(WD,'/data/processed-data_steep.txt')
+#write.table(df_mod, file = out_file, quote = FALSE, sep = '\t')
+```
+
+```{Session}
+sessionInfo()
+```

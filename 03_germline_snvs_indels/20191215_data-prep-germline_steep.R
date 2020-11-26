@@ -1,7 +1,7 @@
 #'---
-#' title: "Predictive Model of Germline SNPs: Process Data"
+#' title: "Predictive Model of Germline SNPs: Process Data to Build Machine Learning Algorithm"
 #' author: Alec Steep
-#' date: "`r format.Date( Sys.Date(), '%Y%m%d' )`"
+#' date: "20191215"
 #' output: 
 #'     html_document:
 #'         code_folding: hide
@@ -17,6 +17,8 @@ knitr::opts_chunk$set(cache = FALSE)
 
 #' # Goals of Analysis
 #' * Prepare data for predictive modeling
+#' * Prepare a dataset for training, validation, and test sets
+#' * Prepare the remaining data for prediction
 
 #' ## Setup the Environment
 
@@ -27,13 +29,13 @@ knitr::opts_chunk$set(cache = FALSE)
 ################################################################################
 
 # Set the working directory
-WD <- '/Users/Alec/Documents/Bioinformatics/MDV_Project/germline_snps_indels'
-setwd(WD)
+WD <- '/Volumes/Frishman_4TB/MDV_Project/germline_snps_indels'
+#setwd(WD)
 
 # Load the dependencies
 #source("https://bioconductor.org/biocLite.R")
-BiocManager::install("BSgenome.Ggallus.UCSC.galGal4")
-install.packages("earth")
+#BiocManager::install("BSgenome.Ggallus.UCSC.galGal4")
+#install.packages("earth")
 
 # Load dependencies
 pacs...man <- c("tidyverse","data.table","R.utils","ggpubr","plyr","ROCR","ff","GenomicRanges","BSgenome","BSgenome.Ggallus.UCSC.galGal4","BSgenome.Ggallus.UCSC.galGal5","rtracklayer", "caret","pROC","modelr","ggplot2","e1071","doMC","glmnet", "lattice","MASS","pamr","pls","sparseLDA","lubridate","reshape2","kernlab", "klaR","latticeExtra","earth","partykit",
@@ -169,12 +171,12 @@ f_pmap_aslist <- function(df) {
 ######################
 
 # Decision to perform random sub sampling
-subset <- FALSE
+subset <- F
 if(subset) {
         # Generate a file of randomly choosen values for testing
         n=99999
         # Load the 600K training SNPs
-        train_file <- "./data/600K-regions-F1_steep.txt"
+        train_file <- paste0(WD,"/data/600K-regions-F1_steep.txt")
         train_out <- str_replace(train_file, '.txt', paste0('_',n,'.txt'))
         # Generate header
         sys_cmd <- paste0('head -n1 ',train_file, '> ',train_out)
@@ -183,7 +185,7 @@ if(subset) {
         sys_cmd <- paste0('grep -v "^#" ',train_file,' | shuf -n ',n,' >> ',train_out)
         system(sys_cmd)
 }else{
-        train_out <- "./data/600K-regions-F1_steep.txt"
+        train_out <- paste0(WD,"/data/600K-regions-F1_steep.txt")
 }
 
 # Classes for columns
@@ -200,25 +202,29 @@ K600_df$F1_ALT <- as.factor(K600_df$F1_ALT)
 # Examine data
 dim(K600_df)
 str(K600_df)
-summary(K600_df)
+#summary(K600_df)
 
-# Raw Germline SNP calls
+# Raw Germline SNP calls (To Overlap with K600_df)
 ######################
-
 # Raw SNPs file
-# Generate a file of randomly choosen rows for testing (consider putting 'if' statements in here if files already exist to save time)
-n=99999
-# Generate header
-sys_cmd <- paste0('bgzip -d -c ./data/raw_snps_indels/germline_raw_snps_indels_genotyped.g.vcf.gz | grep "^#" > ./data/raw_snps_indels/germline_raw_snps_indels_genotyped_',n,'.g.vcf')
-system(sys_cmd)
-# Collect random data
-sys_cmd <- paste0('bgzip -d -c ./data/raw_snps_indels/germline_raw_snps_indels_genotyped.g.vcf.gz | grep -v "^#" | shuf -n ',n,' >> ./data/raw_snps_indels/germline_raw_snps_indels_genotyped_',n,'.g.vcf')
-system(sys_cmd)
-
-# Load the raw SNP calls
-raw_file <- './data/raw_snps_indels/germline_raw_snps_indels_genotyped.g.vcf.gz'
-#raw_file <- paste0('./data/raw_snps_indels/germline_raw_snps_indels_genotyped_',n,'.g.vcf')
-raw_df <- load_normal_vcfs(raw_file)
+subset <- T
+if(subset) {
+        # Generate a file of randomly choosen rows for testing (consider putting 'if' statements in here if files already exist to save time)
+        n=99999
+        # Generate header
+        sys_cmd <- paste0('bgzip -d -c ',WD,'/data/raw_snps_indels/germline_raw_snps_indels_genotyped.g.vcf.gz | grep "^#" > ',WD,'/data/raw_snps_indels/germline_raw_snps_indels_genotyped_',n,'.g.vcf')
+        system(sys_cmd)
+        # Collect random data
+        sys_cmd <- paste0('bgzip -d -c ',WD,'/data/raw_snps_indels/germline_raw_snps_indels_genotyped.g.vcf.gz | grep -v "^#" | shuf -n ',n,' >> ',WD,'/data/raw_snps_indels/germline_raw_snps_indels_genotyped_',n,'.g.vcf')
+        system(sys_cmd)
+        # Load the raw SNP calls
+        raw_file <- paste0(WD,'/data/raw_snps_indels/germline_raw_snps_indels_genotyped_',n,'.g.vcf')
+        raw_df <- load_normal_vcfs(raw_file)
+}else{
+        # Load the raw SNP calls
+        raw_file <- paste0(WD,'/data/raw_snps_indels/germline_raw_snps_indels_genotyped.g.vcf.gz')
+        raw_df <- load_normal_vcfs(raw_file)
+}
 
 # Remove unneccessary columns from the start on attempt to reduce mem usage
 raw_df <- raw_df %>% dplyr::select(-ID, -FILTER)
@@ -241,16 +247,43 @@ raw_df <- raw_df %>% dplyr::select(-INFO)
 # Remove large memory items
 rm(raw_info)
 
+# Reformat some of the SNPs
+########################################
+# Collect all possible multiple SNP combination
+prm <- gtools::permutations(n=4, r=2, v=c('A','T','C','G'))
+hetero_alleles <- apply(prm, 1, function(x)paste0(x, collapse=','))
+#Filter out indels and allow for possibility of multiple SNPs at any given location
+raw_df <- raw_df %>%
+        filter(REF %in% c('A','C','T','G',hetero_alleles)) %>%
+        filter(ALT %in% c('A','C','T','G',hetero_alleles)) %>%
+        mutate(REF = as.character(REF)) %>%
+        mutate(ALT = as.character(ALT))
+
+# Seperate the ALT column into a duplicated row when necessary
+# Collect double SNPs and seperate them into single SNPs
+raw_df1 <- raw_df %>% 
+        filter(ALT %in% hetero_alleles) %>%
+        separate_rows(ALT) %>%
+        mutate(DBL_SNP = 'Y')
+        
+# Collect single SNPs
+raw_df2 <- raw_df %>% 
+        filter(ALT %!in% hetero_alleles) %>%
+        mutate(DBL_SNP = 'N')
+# Combine dataframes
+raw_df <- rbind(raw_df1, raw_df2) %>%
+        arrange(CHROM,POS,REF,ALT)
+
 # Examine data
 dim(raw_df)
-str(raw_df)
-summary(raw_df)
+#str(raw_df)
+#summary(raw_df)
 
 # GATK 600K-Targetted Genotypes
 ######################
 
 # Load the GATK 600K-targetted SNPs
-df_file <- "./data/raw_snps_indels/collective-genotypes-600K-regions_steep.g.vcf.gz"
+df_file <- paste0(WD,"/data/raw_snps_indels/collective-genotypes-600K-regions_steep.g.vcf.gz")
 df_out <- str_replace(df_file, '.g.vcf.gz', '.g.vcf')
 # Generate header
 sys_cmd <- paste0('bgzip -d -c ',df_file, ' | grep "^#CHROM" | sed "s/#//" > ',df_out)
@@ -263,7 +296,7 @@ system(sys_cmd)
 col_class <- c(rep('factor',1), 'integer', rep('factor',29))
 # Read in file
 GATK_K600_df <- read.table.ffdf(file = df_out, sep = '\t',header=TRUE,
-                                colClasses=col_class, VERBOSE = TRUE, first.rows = 100000 ) %>% as_tibble()
+                                colClasses=col_class, VERBOSE = TRUE) %>% as_tibble()
 
 # Remove unneccessary columns from the start on attempt to reduce mem usage
 GATK_K600_df <- GATK_K600_df %>% dplyr::select(-ID, -FILTER)
@@ -292,8 +325,8 @@ rm(GATK_K600_info)
 
 # Examine data
 dim(GATK_K600_df)
-str(GATK_K600_df)
-summary(GATK_K600_df)
+#str(GATK_K600_df)
+#summary(GATK_K600_df)
 
 ################################################################################
 ################# Combine Targetted and WGS SNP Calls ##########################
@@ -324,10 +357,10 @@ df_rt <- bind_rows(df_rj, df_laj) %>%
 # Exmaine dataset
 dim(df_rt)
 str(df_rt)
-summary(df_rt)
+#summary(df_rt)
 
 # Remove large objects
-rm(GATK_K600_df, raw_df, df_rj, df_laj)
+#rm(GATK_K600_df, df_rj, df_laj)
 
 ################################################################################
 ########### Filter Genos to later make Training Data (600K SNP arrays) #########
@@ -437,6 +470,7 @@ samples <- names(df_rt)[startsWith(names(df_rt), 'X')]
 # Generate empty dataframe for samples to be placed into
 df_mod <- as_tibble()
 # Model will be performed on a per-sample basis
+#sample <- samples[1]
 for(sample in samples){
         
         ########################################################################
@@ -450,7 +484,7 @@ for(sample in samples){
         # Other samples
         not_sample <- samples[samples %!in% sample]
         # Select columns needed
-        sample_df <- df_rt %>% dplyr::select(-not_sample)
+        sample_df <- df_rt %>% dplyr::select(-all_of(not_sample))
         # Separate the FORMAT and sample columns
         # Capture for format factors
         FRMT_FACTORS <- table(sample_df$FORMAT) %>% names()
@@ -475,7 +509,7 @@ for(sample in samples){
         }
         # Combine the dataframes
         sample_df = do.call(rbind, tib_list)
-        
+        sample_df$GT %>% table()
         # Ensure columns are proper data types
         ############################
         
@@ -651,7 +685,7 @@ str(df_mod)
 summary(df_mod)
 
 # Write the dataframe to file
-out_file <- './data/processed-data_steep.txt'
-write.table(df_mod, file = out_file, quote = FALSE, sep = '\t')
+out_file <- paste0(WD,'/data/processed-data_steep.txt')
+#write.table(df_mod, file = out_file, quote = FALSE, sep = '\t')
 
 sessionInfo()
